@@ -1,7 +1,12 @@
+*.err
+*.out
+
 # Logging
 tdmpc2/logs/
 tdmpc2/outputs/
 tdmpc2/wandb/
+
+tdmpc2_data
 
 # HPC
 nautilus/*.yaml
