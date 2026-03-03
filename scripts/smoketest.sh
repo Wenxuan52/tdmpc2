@@ -23,7 +23,6 @@ export MUJOCO_GL=egl
 export PYOPENGL_PLATFORM=egl
 
 # wandb auth (don’t rely on /home)
-export WANDB_API_KEY="7feaca49acb80e68486cc6e9c40b2f2c397a0fae"
 export WANDB_MODE=online
 
 # conda
@@ -31,4 +30,14 @@ source /scratch_tide/wy524/miniconda3/etc/profile.d/conda.sh
 conda activate tdmpc2
 
 cd /scratch_tide/wy524/tdmpc2
-python -u tdmpc2/train.py task=dog-run steps=10000
+# python -u tdmpc2/train.py task=dog-run steps=10000
+
+python train.py \
+    task=dog-run \
+    steps=10000 \
+    planner_type=diffusion \
+    diffusion_steps=10 \
+    diffusion_num_samples=16 \
+    diffusion_log_stats=true \
+    eval_episodes=5 \
+    eval_freq=2000
