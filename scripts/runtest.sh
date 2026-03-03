@@ -23,7 +23,6 @@ export MUJOCO_GL=egl
 export PYOPENGL_PLATFORM=egl
 
 # wandb auth (don’t rely on /home)
-export WANDB_API_KEY="7feaca49acb80e68486cc6e9c40b2f2c397a0fae"
 export WANDB_MODE=online
 
 # conda
