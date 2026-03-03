@@ -5,6 +5,7 @@ from common import math
 from common.scale import RunningScale
 from common.world_model import WorldModel
 from common.layers import api_model_conversion
+from planners import DiffusionPlanner
 from tensordict import TensorDict
 
 
@@ -39,6 +40,7 @@ class TDMPC2(torch.nn.Module):
 		print('Episode length:', cfg.episode_length)
 		print('Discount factor:', self.discount)
 		self._prev_mean = torch.nn.Buffer(torch.zeros(self.cfg.horizon, self.cfg.action_dim, device=self.device))
+		self._diffusion_planner = DiffusionPlanner(cfg)
 		if cfg.compile:
 			print('Compiling update function with torch.compile...')
 			self._update = torch.compile(self._update, mode="reduce-overhead")
@@ -48,12 +50,18 @@ class TDMPC2(torch.nn.Module):
 		_plan_val = getattr(self, "_plan_val", None)
 		if _plan_val is not None:
 			return _plan_val
-		if self.cfg.compile:
+		planner_type = self.cfg.get('planner_type', 'mppi')
+		if planner_type == 'diffusion':
+			plan = self._diffusion_plan
+		elif self.cfg.compile:
 			plan = torch.compile(self._plan, mode="reduce-overhead")
 		else:
 			plan = self._plan
 		self._plan_val = plan
 		return self._plan_val
+
+	def _diffusion_plan(self, obs, t0=False, eval_mode=False, task=None):
+		return self._diffusion_planner.plan(self, obs, t0=t0, eval_mode=eval_mode, task=task)
 
 	def _get_discount(self, episode_length):
 		"""
@@ -124,7 +132,8 @@ class TDMPC2(torch.nn.Module):
 	def _estimate_value(self, z, actions, task):
 		"""Estimate value of a trajectory starting at latent state z and executing given actions."""
 		G, discount = 0, 1
-		termination = torch.zeros(self.cfg.num_samples, 1, dtype=torch.float32, device=z.device)
+		num_samples = actions.shape[1]
+		termination = torch.zeros(num_samples, 1, dtype=torch.float32, device=z.device)
 		for t in range(self.cfg.horizon):
 			reward = math.two_hot_inv(self.model.reward(z, actions[t], task), self.cfg)
 			z = self.model.next(z, actions[t], task)
