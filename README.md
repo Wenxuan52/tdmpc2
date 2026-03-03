@@ -120,6 +120,19 @@ $ python train.py task=walker-walk obs=rgb
 
 We recommend using default hyperparameters for single-task online RL, including the default model size of 5M parameters (`model_size=5`). Multi-task offline RL benefits from a larger model size, but larger models are also increasingly costly to train and evaluate. Available arguments are `model_size={1, 5, 19, 48, 317}`. See `config.yaml` for a full list of arguments.
 
+
+### Planner selection (MPPI / diffusion)
+
+Planning defaults to MPPI (`planner_type=mppi`) to preserve baseline behavior. A no-gradient model-based diffusion planner can be enabled with `planner_type=diffusion`.
+
+Quick sanity check (single evaluation run, useful for NaN checks in planned actions/scores):
+
+```
+python evaluate.py task=dog-run checkpoint=/path/to/model.pt planner_type=diffusion eval_episodes=1 diffusion_steps=6 diffusion_num_samples=128
+```
+
+For a fast smoke test, reduce both `diffusion_steps` and `diffusion_num_samples` (e.g., 4 and 64).
+
 ----
 
 ## Citation
