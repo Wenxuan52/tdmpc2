@@ -45,7 +45,7 @@
 
    * 从 (q(a^0 | a^\tau)) 采样很多候选 `a0_samples`（形状 `[Nsample, H, act_dim]`），并 `clamp(-1,1)`（MBD 就这么做）。 ([GitHub][2])
    * 把它转成 TD-MPC2 习惯的 `[H, Nsample, act_dim]`，喂给 `_estimate_value(z_repeat, actions)` 得到每条候选的 `G`。 ([GitHub][1])
-   * 用 `softmax( temperature * standardized(G) )` 得权重（MBD 会做 mean/std 标准化避免塌缩；TD-MPC2 则用 max-subtraction）。两种都行，建议先抄 MBD 的标准化套路。 ([GitHub][2])
+   * 用 `softmax( temperature * standardized(G) )` 得权重（对应论文里的 `w_a ∝ exp(ηG)`；MBD 会做 mean/std 标准化避免塌缩；TD-MPC2 则用 max-subtraction）。两种都行，建议先抄 MBD 的标准化套路。 ([GitHub][2])
    * 得到加权均值轨迹 `a_bar = Σ w * a0_samples`
    * **用 MBD 的 score 形式**更新到 (\tau-1)：
      `score_mb = 1/(1-alpha_bar[tau]) * (-x_tau + sqrt(alpha_bar[tau]) * a_bar)` ([GitHub][2])
@@ -76,11 +76,42 @@
 * 只对 `a_bar[0]`（第一个动作）打开 `requires_grad=True`，计算 `Q(z, a_bar[0])` 或者 `G` 的近似（比如只看 `Q`），然后取 `∇_{a} Q` 作为 `score_mf` 的方向（类似 classifier guidance）。
 * 最后 `score = β*score_mf + (1-β)*score_mb`，β 可以从小到大调。
 
-这一步计算量小，能先把“model-free”信号接进来。
+这一步计算量小，能先把“model-free”信号接进来。（你已完成到这里）
 
-**Option B（更贴论文，但仍可控）：对少量“elite/子集样本”算 (\nabla_a G)**
+**Option B（更贴论文，且满足“整段动作全可导”的新要求）：对少量“elite/子集样本”算 (\nabla_{a_{t:t+H}} G)**
 
-* 不对全部 Nsample 做反传，只选 topK（比如 32/64 条）样本做 `G` 的梯度，近似论文里 `E[w * ∇G]`。
+> 新要求：**对整段 `t:t+H` 的动作都 `requires_grad=True`**，即梯度是 (\nabla_{a^0_{t:t+H}} G)，而不是只对第一个动作。
+
+* 在每个 diffusion step (\tau)，你已有一批 `a0_samples`（形状 `[Nsample, H, act_dim]`）。
+
+* 选 topK（比如 32/64）条样本组成 `a0_elite`（形状 `[K, H, act_dim]`），然后做两件关键事：
+
+  1. **把 `a0_elite` 变成叶子张量并全序列可导**：
+     `a0_elite = a0_elite.detach().requires_grad_(True)`
+     （detach 的目的是：你要的梯度是对 `a0` 的，不需要把梯度穿回采样噪声/`x_tau`。）
+  2. 用 world model rollout（也就是你现在 `_estimate_value` / 你实现的 `G` 计算）得到每条样本的 `G_elite`（形状 `[K]`），这里的 `G` 必须是论文那种整段结构：
+     `G = Σ_{i=t}^{t+H-1} γ^{i-t} r_i + γ^H Q(z_{t+H}, a_{t+H})`
+     并且 rollout / reward / Q 都要保持可导（不 `no_grad`）。
+
+* 用 `softmax( η * standardized(G_elite) )` 得到权重 `w_elite`，**并且按论文式 (7) 的实现方式把权重 detach**：
+  `w_elite = w_elite.detach()`
+  （你要实现的是 `E[w * ∇(ηG)]`，不是让 autograd 再对 `w` 求导。）
+
+* 构造一个标量目标并一次性反传拿到全序列梯度（对应 `Σ w_i ∇(ηG_i)`）：
+
+  * `obj = Σ_i w_elite[i] * (η * G_elite[i])`
+  * `grad = ∇_{a0_elite} obj`，得到形状 `[K, H, act_dim]`
+  * 聚合成论文里的期望形式（例如求和或均值）：
+    `grad_bar = Σ_i grad[i]` → 形状 `[H, act_dim]`
+
+* 按论文式 (7) 的系数，把它变成 `score_mf`（注意是对 **整段** 的 score）：
+
+  * `score_mf = (1 / sqrt(alpha_bar[tau])) * grad_bar`
+
+* 最后仍然用 PoE 线性组合：
+
+  * `score = β*score_mf + (1-β)*score_mb`
+
 * TD-MPC2 的 `two_hot_inv` 是可导的（softmax + 加权 bins + symexp），所以 autograd 能跑，但注意数值稳定。 ([GitHub][3])
 
 ---
@@ -94,16 +125,27 @@
 **3.1 先蒸馏（让它先能跑得快）**
 
 * 用 Step 1/2 planner 生成的轨迹当作训练数据：`(z_t, a_{t:t+H}^0)`
-* 训练一个 `score_net(z, a^τ, τ)`（或者 ε-net）做标准 DDPM 训练：随机采样 τ，加噪得到 `a^τ`，让网络预测 noise/score。
-* 这一步先不追求论文的“精确分解”，目标只是：**网络能复现 planner 的输出分布**，把 Nsample 大采样变成小步数小 batch 的网络采样。
+  但为了和论文更一致，这里建议把“监督信号”从“动作本身”升级为“score-field”（也就是你要学的 `∇_{a^τ} log π`）。
+* 训练一个 `score_net(z, a^τ, τ)`（或者 ε-net）做标准 DDPM 训练：随机采样 τ，加噪得到 `a^τ`。
+* **补充（对齐论文关键点）：让网络学习论文的 unified score，而不是只拟合 planner 输出动作分布**：
+
+  * 对每个训练样本 `(z_t, a^τ, τ)`，用你 Step 1/2B 的流程算一个 `score_target`：
+    `score_target = β*score_mf + (1-β)*score_mb`
+  * 其中 `score_mf` 必须来自 Step 2B：**对整段 `a^0_{t:t+H}` 开 `requires_grad=True` 的 (\nabla G)**；`score_mb` 来自加权均值的闭式 score。
+  * 用回归损失训练 `score_net`：
+    `L_score = || score_net(z, a^τ, τ) - score_target ||^2`
+
+这样训练出来的 diffusion policy，采样时就能“直接用网络给 score”，而不是每个 diffusion step 都去做大规模采样 +（可能还要）反传。
 
 **3.2 再加“Correct”：把 world model 当隐式纠偏器**
 
 * 训练时把 `score_target` 写成你 Step 2 里用的那套：
   `score_target = β*score_mf + (1-β)*score_mb`
-* 其中 `score_mb` 仍来自 world model rollout 的 Monte Carlo（类似 MBD），`score_mf` 来自 Q（梯度或近似）。 ([GitHub][2])
+* **补充（让 Correct 更接近论文语义）：**
 
-这样，你就把论文的核心“纠偏结构”落到一个可训练的 score 网络上了。
+  * `score_mb` 是 world model 通过 dreamed rollouts 给出的“梯度-free 纠偏项”（对应论文式 (8)）。
+  * `score_mf` 是 Q-induced 的“结构化引导项”（对应论文式 (7)），并且你现在要求 **全轨迹 (\nabla_{a^0_{t:t+H}} G)**。
+* 这样训练出的 `score_net` 本质上是在学习一个“被 world model 隐式校正过的 score field”，从而把论文的“Correct”落到可学习策略上。
 
 ---
 
@@ -115,13 +157,18 @@ TD-MPC2 现在的 actor 是一个高斯 policy prior `_pi`，更新方式是 `up
 * 把 `update_pi` 替换成 `update_diffusion_policy`：
 
   * 输入：`z_t`（或 `zs`）+ buffer 中的 action sequence / planner 轨迹
-  * loss：DDPM denoising loss（外加你定义的 mf/mb guidance 目标）
+  * loss：以 Step 3 的 `L_score` 为主（score matching 到 `score_target`），其中 `score_target` 由当前 world model + 当前 Q 共同定义：
+    `score_target = β*score_mf + (1-β)*score_mb`
+    并且 `score_mf` 继续坚持 Step 2B 的要求：**整段动作序列全可导求 (\nabla G)**。
+  * world model / Q 的更新保持 TD-MPC2 的主线（用 replay 学 dynamics/reward/Q），只是在“策略更新”上从高斯 prior 切换为 diffusion score 学习。
+
 * planner 逐步从“重采样”退火到“网络直接采样”：
 
-  * 训练早期：多用 mb（模型纠偏）+ 多 sample
-  * 训练后期：β 增大（更信 mf/Q），Nsample 降低，甚至只用网络采样
+  * 训练早期：多用 mb（模型纠偏）+ 多 sample（必要时仍可用 Step 1/2 的 teacher 计算 `score_target`）
+  * 训练后期：主要依赖 `score_net` 直接生成 score 做 reverse steps；β 增大（更信 mf/Q 结构），Nsample 降低，甚至不再需要在线反传与大采样
 
 ---
+
 
 ## 4) 你提到的两个“trick”，怎么落到代码上？
 

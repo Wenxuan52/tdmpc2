@@ -50,6 +50,13 @@ diffusion_temperature: 0.5
 diffusion_action_noise: 0.05
 diffusion_log_stats: false
 
+diffusion_mf_guidance: true
+diffusion_mf_beta: 0.2
+diffusion_mf_scale: 1.0
+diffusion_mf_norm_clip: 5.0
+diffusion_mf_q_type: 'min'
+diffusion_mf_use_target_q: false
+
 # actor
 log_std_min: -10
 log_std_max: 2
