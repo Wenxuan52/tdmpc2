@@ -49,6 +49,19 @@ diffusion_num_samples: 16
 diffusion_temperature: 0.5
 diffusion_action_noise: 0.05
 diffusion_log_stats: false
+diffusion_mf_guidance: false
+diffusion_mf_mode: qgrad_first
+diffusion_mf_beta: 0.0
+diffusion_mf_scale: 1.0
+diffusion_mf_norm_clip: 0.0
+diffusion_mf_q_type: min
+diffusion_mf_use_target_q: false
+diffusion_mf_eta: 1.0
+diffusion_mf_topk: 32
+diffusion_mf_temp: 0.1
+diffusion_mf_std_floor: 1e-4
+diffusion_mf_grad_norm_clip: 0.0
+diffusion_mf_detach_weights: true
 
 diffusion_mf_guidance: true
 diffusion_mf_beta: 0.2
