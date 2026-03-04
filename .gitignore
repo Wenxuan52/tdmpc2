@@ -1,6 +1,8 @@
 *.err
 *.out
 
+script/
+
 # Logging
 tdmpc2/logs/
 tdmpc2/outputs/

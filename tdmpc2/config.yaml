@@ -7,7 +7,7 @@ obs: state
 episodic: false
 
 # evaluation
-checkpoint: ???
+checkpoint: "" # for evaluation
 eval_episodes: 10
 eval_freq: 50000
 
@@ -28,7 +28,8 @@ discount_min: 0.95
 discount_max: 0.995
 buffer_size: 1_000_000
 exp_name: default
-data_dir: ???
+data_dir: /scratch_tide/wy524/tdmpc2/tdmpc2_data
+
 
 # planning
 mpc: true
@@ -44,9 +45,9 @@ temperature: 0.5
 diffusion_steps: 10
 diffusion_beta0: 1e-4
 diffusion_betaT: 1e-2
-diffusion_num_samples: ${num_samples}
-diffusion_temperature: ${temperature}
-diffusion_action_noise: ${min_std}
+diffusion_num_samples: 16
+diffusion_temperature: 0.5
+diffusion_action_noise: 0.05
 diffusion_log_stats: false
 diffusion_mf_guidance: false
 diffusion_mf_mode: qgrad_first
@@ -62,6 +63,13 @@ diffusion_mf_std_floor: 1e-4
 diffusion_mf_grad_norm_clip: 0.0
 diffusion_mf_detach_weights: true
 
+diffusion_mf_guidance: true
+diffusion_mf_beta: 0.2
+diffusion_mf_scale: 1.0
+diffusion_mf_norm_clip: 5.0
+diffusion_mf_q_type: 'min'
+diffusion_mf_use_target_q: false
+
 # actor
 log_std_min: -10
 log_std_max: 2
@@ -73,7 +81,7 @@ vmin: -10
 vmax: +10
 
 # architecture
-model_size: ???
+model_size: 317
 num_enc_layers: 2
 enc_dim: 256
 num_channels: 32
@@ -85,20 +93,20 @@ dropout: 0.01
 simnorm_dim: 8
 
 # logging
-wandb_project: ???
-wandb_entity: ???
+wandb_project: tdmpc2_test
+wandb_entity: wenxuan-yuan-imperial-college-london
 wandb_silent: false
 enable_wandb: true
 save_csv: true
 
 # misc
-compile: true
-save_video: true
+compile: false
+save_video: false
 save_agent: true
 seed: 1
 
 # convenience
-work_dir: ???
+work_dir: /scratch_tide/wy524/tdmpc2/tdmpc2_runs
 task_title: ???
 multitask: ???
 tasks: ???
