@@ -175,12 +175,13 @@ class DiffusionPlanner:
 			if use_mf_gradg_elite:
 				K = min(max(mf_topk, 1), num_samples)
 				topk_idx = torch.topk(values, K, dim=0).indices
-				a0_elite = a0_samples[topk_idx].detach().clone().requires_grad_(True)
+				a0_elite = a0_samples[topk_idx].detach().clone()
 				if action_mask is not None:
 					a0_elite = a0_elite * action_mask
 				a0_elite = a0_elite.clamp(-1, 1)
 
 				with torch.enable_grad():
+					a0_elite = a0_elite.detach().clone().requires_grad_(True)
 					G_elite = self._estimate_value_grad_elite(
 						agent,
 						z0,

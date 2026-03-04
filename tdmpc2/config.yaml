@@ -63,13 +63,6 @@ diffusion_mf_std_floor: 1e-4
 diffusion_mf_grad_norm_clip: 0.0
 diffusion_mf_detach_weights: true
 
-diffusion_mf_guidance: true
-diffusion_mf_beta: 0.2
-diffusion_mf_scale: 1.0
-diffusion_mf_norm_clip: 5.0
-diffusion_mf_q_type: 'min'
-diffusion_mf_use_target_q: false
-
 # actor
 log_std_min: -10
 log_std_max: 2
