@@ -48,6 +48,19 @@ diffusion_num_samples: ${num_samples}
 diffusion_temperature: ${temperature}
 diffusion_action_noise: ${min_std}
 diffusion_log_stats: false
+diffusion_mf_guidance: false
+diffusion_mf_mode: qgrad_first
+diffusion_mf_beta: 0.0
+diffusion_mf_scale: 1.0
+diffusion_mf_norm_clip: 0.0
+diffusion_mf_q_type: min
+diffusion_mf_use_target_q: false
+diffusion_mf_eta: 1.0
+diffusion_mf_topk: 32
+diffusion_mf_temp: 0.1
+diffusion_mf_std_floor: 1e-4
+diffusion_mf_grad_norm_clip: 0.0
+diffusion_mf_detach_weights: true
 
 # actor
 log_std_min: -10
