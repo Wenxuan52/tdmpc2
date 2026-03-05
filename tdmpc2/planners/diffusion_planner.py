@@ -269,6 +269,8 @@ class DiffusionPlanner:
 				f"score_mean={values.mean().item():.4f} score_std={values.std().item():.4f}{mf_debug}"
 			)
 		agent._prev_mean.copy_(x0.detach())
+		agent._last_plan = x0.detach().clone()
+		agent._last_z = z0[0].detach().clone()
 
 		action = x0[0]
 		if not eval_mode:

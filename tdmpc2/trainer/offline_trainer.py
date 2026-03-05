@@ -29,6 +29,7 @@ class OfflineTrainer(Trainer):
 				while not done:
 					torch.compiler.cudagraph_mark_step_begin()
 					action = self.agent.act(obs, t0=t==0, eval_mode=True, task=task_idx)
+					self.agent.maybe_store_distill(task=task_idx)
 					obs, reward, done, info = self.env.step(action)
 					ep_reward += reward
 					t += 1
