@@ -62,6 +62,23 @@ diffusion_mf_temp: 0.1
 diffusion_mf_std_floor: 1e-4
 diffusion_mf_grad_norm_clip: 0.0
 diffusion_mf_detach_weights: true
+diffusion_distill_enabled: false
+diffusion_distill_buffer_size: 50000
+diffusion_distill_batch_size: 256
+diffusion_policy_lr: 1e-4
+diffusion_policy_weight_decay: 0.0
+diffusion_policy_steps: 10
+diffusion_policy_act: false
+diffusion_score_distill_enabled: false
+diffusion_teacher_num_samples: 32
+diffusion_teacher_topk: 16
+diffusion_teacher_temp: 0.1
+diffusion_teacher_eta: 1.0
+diffusion_teacher_beta: 0.2
+diffusion_teacher_std_floor: 1e-4
+diffusion_teacher_detach_weights: true
+diffusion_teacher_grad_norm_clip: 0.0
+diffusion_score_distill_batch_frac: 0.25
 
 # actor
 log_std_min: -10
