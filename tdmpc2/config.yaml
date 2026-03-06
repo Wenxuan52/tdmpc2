@@ -28,7 +28,7 @@ discount_min: 0.95
 discount_max: 0.995
 buffer_size: 1_000_000
 exp_name: default
-data_dir: /scratch_tide/wy524/tdmpc2/tdmpc2_data
+data_dir: /scratch_tide/wy524/tdmpc2/tdmpc2_data/mt30
 
 
 # planning
