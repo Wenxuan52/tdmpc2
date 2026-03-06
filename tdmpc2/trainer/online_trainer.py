@@ -106,6 +106,7 @@ class OnlineTrainer(Trainer):
 			# Collect experience
 			if self._step > self.cfg.seed_steps:
 				action = self.agent.act(obs, t0=len(self._tds)==1)
+				self.agent.maybe_store_distill()
 			else:
 				action = self.env.rand_act()
 			obs, reward, done, info = self.env.step(action)

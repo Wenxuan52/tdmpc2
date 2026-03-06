@@ -2,10 +2,12 @@ import torch
 import torch.nn.functional as F
 
 from common import math
+from common.distill_buffer import DistillBuffer
 from common.scale import RunningScale
 from common.world_model import WorldModel
 from common.layers import api_model_conversion
 from planners import DiffusionPlanner
+from policies import DiffusionPolicy
 from tensordict import TensorDict
 
 
@@ -41,6 +43,15 @@ class TDMPC2(torch.nn.Module):
 		print('Discount factor:', self.discount)
 		self._prev_mean = torch.nn.Buffer(torch.zeros(self.cfg.horizon, self.cfg.action_dim, device=self.device))
 		self._diffusion_planner = DiffusionPlanner(cfg)
+		self.diffusion_policy = DiffusionPolicy(cfg).to(self.device)
+		self.diffusion_policy_optim = torch.optim.Adam(
+			self.diffusion_policy.parameters(),
+			lr=self.cfg.diffusion_policy_lr,
+			weight_decay=self.cfg.diffusion_policy_weight_decay,
+		)
+		self.distill_buffer = DistillBuffer(cfg) if cfg.get('diffusion_distill_enabled', False) else None
+		self._last_plan = None
+		self._last_z = None
 		if cfg.compile:
 			print('Compiling update function with torch.compile...')
 			self._update = torch.compile(self._update, mode="reduce-overhead")
@@ -53,6 +64,8 @@ class TDMPC2(torch.nn.Module):
 		planner_type = self.cfg.get('planner_type', 'mppi')
 		if planner_type == 'diffusion':
 			plan = self._diffusion_plan
+		elif planner_type == 'diffusion_policy' and self.cfg.get('diffusion_policy_act', False):
+			plan = self._diffusion_policy_plan
 		elif self.cfg.compile:
 			plan = torch.compile(self._plan, mode="reduce-overhead")
 		else:
@@ -62,6 +75,26 @@ class TDMPC2(torch.nn.Module):
 
 	def _diffusion_plan(self, obs, t0=False, eval_mode=False, task=None):
 		return self._diffusion_planner.plan(self, obs, t0=t0, eval_mode=eval_mode, task=task)
+
+	def _diffusion_policy_plan(self, obs, t0=False, eval_mode=False, task=None):
+		_ = (t0, eval_mode)
+		z0 = self.model.encode(obs, task)
+		action_mask = None
+		if self.cfg.multitask:
+			action_mask = self.model._action_masks[task].squeeze(0)
+		a0 = self.diffusion_policy.sample(
+			z0,
+			task=task,
+			action_mask=action_mask,
+			steps=self.cfg.diffusion_policy_steps,
+			deterministic=True,
+		)[0]
+		if action_mask is not None:
+			a0 = a0 * action_mask
+		a0 = a0.clamp(-1, 1)
+		self._last_plan = a0.detach().clone()
+		self._last_z = z0[0].detach().clone()
+		return a0[0]
 
 	def _get_discount(self, episode_length):
 		"""
@@ -85,7 +118,7 @@ class TDMPC2(torch.nn.Module):
 		Args:
 			fp (str): Filepath to save state dict to.
 		"""
-		torch.save({"model": self.model.state_dict()}, fp)
+		torch.save({"model": self.model.state_dict(), "diffusion_policy": self.diffusion_policy.state_dict()}, fp)
 
 	def load(self, fp):
 		"""
@@ -95,12 +128,14 @@ class TDMPC2(torch.nn.Module):
 			fp (str or dict): Filepath or state dict to load.
 		"""
 		if isinstance(fp, dict):
-			state_dict = fp
+			checkpoint = fp
 		else:
-			state_dict = torch.load(fp, map_location=torch.get_default_device(), weights_only=False)
-		state_dict = state_dict["model"] if "model" in state_dict else state_dict
+			checkpoint = torch.load(fp, map_location=torch.get_default_device(), weights_only=False)
+		state_dict = checkpoint["model"] if "model" in checkpoint else checkpoint
 		state_dict = api_model_conversion(self.model.state_dict(), state_dict)
 		self.model.load_state_dict(state_dict)
+		if "diffusion_policy" in checkpoint:
+			self.diffusion_policy.load_state_dict(checkpoint["diffusion_policy"])
 		return
 
 	@torch.no_grad()
@@ -121,6 +156,8 @@ class TDMPC2(torch.nn.Module):
 		if task is not None:
 			task = torch.tensor([task], device=self.device)
 		if self.cfg.mpc:
+			self._last_plan = None
+			self._last_z = None
 			return self.plan(obs, t0=t0, eval_mode=eval_mode, task=task).cpu()
 		z = self.model.encode(obs, task)
 		action, info = self.model.pi(z, task)
@@ -160,7 +197,8 @@ class TDMPC2(torch.nn.Module):
 			torch.Tensor: Action to take in the environment.
 		"""
 		# Sample policy trajectories
-		z = self.model.encode(obs, task)
+		z0 = self.model.encode(obs, task)
+		z = z0
 		if self.cfg.num_pi_trajs > 0:
 			pi_actions = torch.empty(self.cfg.horizon, self.cfg.num_pi_trajs, self.cfg.action_dim, device=self.device)
 			_z = z.repeat(self.cfg.num_pi_trajs, 1)
@@ -213,7 +251,92 @@ class TDMPC2(torch.nn.Module):
 		if not eval_mode:
 			a = a + std * torch.randn(self.cfg.action_dim, device=std.device)
 		self._prev_mean.copy_(mean)
+		self._last_plan = mean.detach().clone()
+		self._last_z = z0[0].detach().clone()
 		return a.clamp(-1, 1)
+
+
+	def maybe_store_distill(self, task=None):
+		if self.distill_buffer is None or self._last_plan is None or self._last_z is None:
+			return
+		action_mask = None
+		task_idx = 0 if task is None else int(task)
+		if self.cfg.multitask:
+			action_mask = self.model._action_masks[task_idx]
+		self.distill_buffer.add(self._last_z, self._last_plan, task_idx=task_idx, action_mask=action_mask)
+
+	def _update_diffusion_policy(self):
+		if self.distill_buffer is None or len(self.distill_buffer) < self.cfg.diffusion_distill_batch_size:
+			return None
+		B = int(self.cfg.diffusion_distill_batch_size)
+		z0, a0, task, action_mask = self.distill_buffer.sample(B, self.device)
+		T = int(self.cfg.diffusion_steps)
+		tau = torch.randint(1, T, (B,), device=self.device)
+		eps = torch.randn_like(a0)
+		a_tau = self.diffusion_policy.q_sample(a0, tau, eps)
+		eps_hat = self.diffusion_policy(z0, a_tau, tau, task=task if self.cfg.multitask else None)
+		mask = action_mask.unsqueeze(1)
+		eps = eps * mask
+		eps_hat = eps_hat * mask
+
+		use_score_distill = bool(self.cfg.get('diffusion_score_distill_enabled', False))
+		teacher_loss = torch.tensor(0.0, device=self.device)
+		standard_loss = torch.tensor(0.0, device=self.device)
+		teacher_stats = {
+			"teacher_score_norm": torch.tensor(0.0, device=self.device),
+			"teacher_score_mb_norm": torch.tensor(0.0, device=self.device),
+			"teacher_score_mf_norm": torch.tensor(0.0, device=self.device),
+			"teacher_grad_norm": torch.tensor(0.0, device=self.device),
+		}
+		if use_score_distill:
+			frac = float(self.cfg.get('diffusion_score_distill_batch_frac', 0.25))
+			n_teacher = min(B, max(0, int(B * frac)))
+			perm = torch.randperm(B, device=self.device)
+			teacher_idx = perm[:n_teacher]
+			standard_idx = perm[n_teacher:]
+
+			if n_teacher > 0:
+				teacher_scores, teacher_stats = self._diffusion_planner.compute_teacher_scores(
+					self,
+					z0[teacher_idx].detach(),
+					a_tau[teacher_idx].detach(),
+					tau[teacher_idx],
+					task_batch=task[teacher_idx] if self.cfg.multitask else None,
+					mask_batch=action_mask[teacher_idx],
+				)
+				alpha_bar_tau = self.diffusion_policy.alpha_bar[tau[teacher_idx]].view(-1, 1, 1)
+				eps_target_teacher = -teacher_scores * torch.sqrt(1.0 - alpha_bar_tau)
+				eps_target_teacher = torch.nan_to_num(eps_target_teacher) * mask[teacher_idx]
+				teacher_loss = F.mse_loss(eps_hat[teacher_idx], eps_target_teacher)
+
+			if standard_idx.numel() > 0:
+				standard_loss = F.mse_loss(eps_hat[standard_idx], eps[standard_idx])
+			loss = (teacher_loss * n_teacher + standard_loss * max(B - n_teacher, 0)) / max(B, 1)
+		else:
+			standard_loss = F.mse_loss(eps_hat, eps)
+			loss = standard_loss
+
+		self.diffusion_policy_optim.zero_grad(set_to_none=True)
+		loss.backward()
+		self.diffusion_policy_optim.step()
+
+		info = TensorDict({
+			"diffusion_policy/loss": loss.detach(),
+			"diffusion_policy/loss_standard": standard_loss.detach(),
+			"diffusion_policy/loss_teacher": teacher_loss.detach(),
+			"diffusion_policy/eps_norm": eps.detach().norm(dim=-1).mean(),
+			"diffusion_policy/eps_hat_norm": eps_hat.detach().norm(dim=-1).mean(),
+		})
+		if use_score_distill:
+			for k, v in teacher_stats.items():
+				info[f"diffusion_policy/{k}"] = v.detach()
+			if n_teacher > 0:
+				alpha_bar_tau = self.diffusion_policy.alpha_bar[tau[teacher_idx]].view(-1, 1, 1)
+				eps_target_teacher = -teacher_scores * torch.sqrt(1.0 - alpha_bar_tau)
+				info["diffusion_policy/teacher_eps_target_norm"] = eps_target_teacher.detach().norm(dim=-1).mean()
+			else:
+				info["diffusion_policy/teacher_eps_target_norm"] = torch.tensor(0.0, device=self.device)
+		return info
 
 	def update_pi(self, zs, task):
 		"""
@@ -355,4 +478,9 @@ class TDMPC2(torch.nn.Module):
 		if task is not None:
 			kwargs["task"] = task
 		torch.compiler.cudagraph_mark_step_begin()
-		return self._update(obs, action, reward, terminated, **kwargs)
+		info = self._update(obs, action, reward, terminated, **kwargs)
+		if self.cfg.get('diffusion_distill_enabled', False):
+			diff_info = self._update_diffusion_policy()
+			if diff_info is not None:
+				info.update(diff_info)
+		return info
