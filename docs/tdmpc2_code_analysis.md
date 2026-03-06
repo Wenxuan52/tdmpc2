@@ -233,3 +233,64 @@
 - `diffusion_policy/teacher_grad_norm`
 
 若这些长期接近 0：优先排查 mask、topk 太小、`beta` 太低或 `std_floor/temp` 设置。
+
+---
+
+## Step4 implementation notes (unified actor + acting anneal)
+
+Implemented in `tdmpc2/tdmpc2.py` + `tdmpc2/config.yaml`:
+
+- New actor update switch:
+  - `policy_update_type: gaussian|diffusion` (default gaussian)
+  - `disable_gaussian_actor_when_diffusion` (optional freeze)
+- `update()` behavior:
+  - world model/Q path unchanged
+  - gaussian mode: keeps `update_pi`
+  - diffusion mode: skips `update_pi`, calls `update_diffusion_actor()` (wraps diffusion update and exports `actor_loss` schema)
+- Training-time acting mix:
+  - `student_act_mixing_enabled`
+  - `student_act_prob`, `student_act_prob_schedule`, `student_act_prob_final`, `student_act_prob_warmup_steps`, `student_act_prob_ramp_steps`
+  - `planner_type_teacher` to select teacher planner route during training mix
+  - eval mode remains deterministic on configured `planner_type`
+- Distill buffer storage policy:
+  - `diffusion_distill_store_student=true|false` controls whether student-chosen actions are also stored
+- Optional diffusion actor data source bridge:
+  - `diffusion_actor_data_source: distill|distill+replay_z`
+- Optional safety check:
+  - `debug_grad_check=true` asserts no world-model grads are created during teacher-score computation.
+
+### Example commands
+
+A) Baseline unchanged
+
+```bash
+python tdmpc2/train.py task=dog-run policy_update_type=gaussian
+```
+
+B) Diffusion actor training with teacher planner only
+
+```bash
+python tdmpc2/train.py task=dog-run \
+  policy_update_type=diffusion planner_type_teacher=diffusion \
+  student_act_mixing_enabled=true student_act_prob=0.0
+```
+
+C) Annealed teacher->student acting mix
+
+```bash
+python tdmpc2/train.py task=dog-run \
+  policy_update_type=diffusion planner_type_teacher=diffusion \
+  student_act_mixing_enabled=true \
+  student_act_prob=0.0 student_act_prob_schedule=linear \
+  student_act_prob_final=1.0 student_act_prob_warmup_steps=10000 \
+  student_act_prob_ramp_steps=500000
+```
+
+D) Student-only acting (later stage)
+
+```bash
+python tdmpc2/train.py task=dog-run \
+  planner_type=diffusion_policy diffusion_policy_act=true \
+  policy_update_type=diffusion \
+  student_act_mixing_enabled=true student_act_prob=1.0
+```
