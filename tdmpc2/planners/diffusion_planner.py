@@ -11,6 +11,135 @@ class DiffusionPlanner:
 	def __init__(self, cfg):
 		self.cfg = cfg
 
+
+	def _teacher_score_single(self, agent, z0, x_tau, tau, task, action_mask):
+		cfg = self.cfg
+		device = x_tau.device
+		num_steps = max(int(cfg.diffusion_steps), 2)
+		betas = torch.linspace(cfg.diffusion_beta0, cfg.diffusion_betaT, num_steps, device=device)
+		alphas = 1.0 - betas
+		alpha_bar = torch.cumprod(alphas, dim=0)
+		alpha_bar_tau = alpha_bar[int(tau)]
+
+		N = int(cfg.get('diffusion_teacher_num_samples', 32))
+		K = int(cfg.get('diffusion_teacher_topk', 16))
+		teacher_temp = float(cfg.get('diffusion_teacher_temp', 0.1))
+		teacher_eta = float(cfg.get('diffusion_teacher_eta', 1.0))
+		teacher_beta = float(cfg.get('diffusion_teacher_beta', 0.2))
+		std_floor = float(cfg.get('diffusion_teacher_std_floor', 1e-4))
+		detach_weights = bool(cfg.get('diffusion_teacher_detach_weights', True))
+		if not detach_weights:
+			detach_weights = True
+		grad_norm_clip = float(cfg.get('diffusion_teacher_grad_norm_clip', 0.0))
+		mf_q_type = cfg.get('diffusion_mf_q_type', 'min')
+		if mf_q_type not in {'min', 'avg'}:
+			mf_q_type = 'min'
+		mf_use_target_q = bool(cfg.get('diffusion_mf_use_target_q', False))
+
+		mean_cond = x_tau / torch.sqrt(alpha_bar_tau)
+		std_cond = torch.sqrt((1.0 - alpha_bar_tau) / alpha_bar_tau)
+		eps_u = torch.randn(N, cfg.horizon, cfg.action_dim, device=device)
+		a0_samples = mean_cond.unsqueeze(0) + std_cond * eps_u
+		if action_mask is not None:
+			a0_samples = a0_samples * action_mask
+		a0_samples = a0_samples.clamp(-1, 1)
+
+		with torch.no_grad():
+			z = z0.detach().repeat(N, 1)
+			actions_for_value = a0_samples.permute(1, 0, 2)
+			G_all = agent._estimate_value(z, actions_for_value, task).nan_to_num(0.0).squeeze(-1)
+
+		g_mean = G_all.mean()
+		g_std = G_all.std()
+		if g_std < std_floor:
+			g_std = torch.tensor(1.0, device=device)
+		logits = (G_all - g_mean) / g_std
+		logits = logits / max(teacher_temp, 1e-6)
+		w = torch.softmax(logits, dim=0)
+		a_bar = (w[:, None, None] * a0_samples).sum(dim=0)
+		score_mb = (-x_tau + torch.sqrt(alpha_bar_tau) * a_bar) / (1.0 - alpha_bar_tau + 1e-8)
+
+		K = min(max(K, 1), N)
+		topk_idx = torch.topk(G_all, K, dim=0).indices
+		a0_elite = a0_samples[topk_idx].detach().clone()
+		if action_mask is not None:
+			a0_elite = a0_elite * action_mask
+		a0_elite = a0_elite.clamp(-1, 1)
+
+		with torch.enable_grad():
+			a0_elite = a0_elite.detach().clone().requires_grad_(True)
+			G_elite = self._estimate_value_grad_elite(
+				agent,
+				z0.detach(),
+				a0_elite,
+				task,
+				action_mask,
+				mf_use_target_q,
+				mf_q_type,
+			)
+			g_elite_mean = G_elite.mean()
+			g_elite_std = G_elite.std()
+			if g_elite_std < std_floor:
+				g_elite_std = torch.tensor(1.0, device=device)
+			elite_logits = (teacher_eta * (G_elite - g_elite_mean) / g_elite_std) / max(teacher_temp, 1e-6)
+			w_elite = torch.softmax(elite_logits, dim=0).detach()
+			obj = (w_elite * (teacher_eta * G_elite)).sum()
+			grad_elite = torch.autograd.grad(
+				obj,
+				a0_elite,
+				retain_graph=False,
+				create_graph=False,
+				allow_unused=False,
+			)[0]
+
+		grad_bar = grad_elite.sum(dim=0).detach()
+		if not torch.isfinite(grad_bar).all():
+			grad_bar = torch.zeros_like(grad_bar)
+		if grad_norm_clip > 0:
+			norm = grad_bar.norm(p=2) + 1e-8
+			scale = min(1.0, grad_norm_clip / norm.item())
+			grad_bar = grad_bar * scale
+		score_mf = grad_bar / torch.sqrt(alpha_bar_tau)
+		if action_mask is not None:
+			score_mf = score_mf * action_mask
+
+		score_target = teacher_beta * score_mf + (1.0 - teacher_beta) * score_mb
+		if action_mask is not None:
+			score_target = score_target * action_mask
+		if not torch.isfinite(score_target).all():
+			score_target = torch.zeros_like(score_target)
+
+		stats = {
+			"teacher_score_norm": score_target.norm(p=2).detach(),
+			"teacher_score_mb_norm": score_mb.norm(p=2).detach(),
+			"teacher_score_mf_norm": score_mf.norm(p=2).detach(),
+			"teacher_grad_norm": grad_bar.norm(p=2).detach(),
+		}
+		return score_target.detach(), stats
+
+	def compute_teacher_scores(self, agent, z0_batch, a_tau_batch, tau_batch, task_batch=None, mask_batch=None):
+		B = z0_batch.shape[0]
+		scores = []
+		stats = {
+			"teacher_score_norm": [],
+			"teacher_score_mb_norm": [],
+			"teacher_score_mf_norm": [],
+			"teacher_grad_norm": [],
+		}
+		for i in range(B):
+			z0 = z0_batch[i:i+1]
+			x_tau = a_tau_batch[i]
+			tau = int(tau_batch[i].item())
+			task = None if task_batch is None else task_batch[i:i+1]
+			action_mask = None if mask_batch is None else mask_batch[i]
+			score_i, stat_i = self._teacher_score_single(agent, z0, x_tau, tau, task, action_mask)
+			scores.append(score_i)
+			for k in stats.keys():
+				stats[k].append(stat_i[k])
+		scores = torch.stack(scores, dim=0)
+		stats = {k: torch.stack(v).mean() if len(v) > 0 else torch.tensor(0.0, device=z0_batch.device) for k, v in stats.items()}
+		return scores, stats
+
 	def _estimate_value_grad_elite(self, agent, z0, actions, task, action_mask, mf_use_target_q, mf_q_type):
 		"""Differentiable trajectory value estimate for elite trajectories.
 

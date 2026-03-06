@@ -278,17 +278,65 @@ class TDMPC2(torch.nn.Module):
 		mask = action_mask.unsqueeze(1)
 		eps = eps * mask
 		eps_hat = eps_hat * mask
-		loss = F.mse_loss(eps_hat, eps)
+
+		use_score_distill = bool(self.cfg.get('diffusion_score_distill_enabled', False))
+		teacher_loss = torch.tensor(0.0, device=self.device)
+		standard_loss = torch.tensor(0.0, device=self.device)
+		teacher_stats = {
+			"teacher_score_norm": torch.tensor(0.0, device=self.device),
+			"teacher_score_mb_norm": torch.tensor(0.0, device=self.device),
+			"teacher_score_mf_norm": torch.tensor(0.0, device=self.device),
+			"teacher_grad_norm": torch.tensor(0.0, device=self.device),
+		}
+		if use_score_distill:
+			frac = float(self.cfg.get('diffusion_score_distill_batch_frac', 0.25))
+			n_teacher = min(B, max(0, int(B * frac)))
+			perm = torch.randperm(B, device=self.device)
+			teacher_idx = perm[:n_teacher]
+			standard_idx = perm[n_teacher:]
+
+			if n_teacher > 0:
+				teacher_scores, teacher_stats = self._diffusion_planner.compute_teacher_scores(
+					self,
+					z0[teacher_idx].detach(),
+					a_tau[teacher_idx].detach(),
+					tau[teacher_idx],
+					task_batch=task[teacher_idx] if self.cfg.multitask else None,
+					mask_batch=action_mask[teacher_idx],
+				)
+				alpha_bar_tau = self.diffusion_policy.alpha_bar[tau[teacher_idx]].view(-1, 1, 1)
+				eps_target_teacher = -teacher_scores * torch.sqrt(1.0 - alpha_bar_tau)
+				eps_target_teacher = torch.nan_to_num(eps_target_teacher) * mask[teacher_idx]
+				teacher_loss = F.mse_loss(eps_hat[teacher_idx], eps_target_teacher)
+
+			if standard_idx.numel() > 0:
+				standard_loss = F.mse_loss(eps_hat[standard_idx], eps[standard_idx])
+			loss = (teacher_loss * n_teacher + standard_loss * max(B - n_teacher, 0)) / max(B, 1)
+		else:
+			standard_loss = F.mse_loss(eps_hat, eps)
+			loss = standard_loss
 
 		self.diffusion_policy_optim.zero_grad(set_to_none=True)
 		loss.backward()
 		self.diffusion_policy_optim.step()
 
-		return TensorDict({
+		info = TensorDict({
 			"diffusion_policy/loss": loss.detach(),
+			"diffusion_policy/loss_standard": standard_loss.detach(),
+			"diffusion_policy/loss_teacher": teacher_loss.detach(),
 			"diffusion_policy/eps_norm": eps.detach().norm(dim=-1).mean(),
 			"diffusion_policy/eps_hat_norm": eps_hat.detach().norm(dim=-1).mean(),
 		})
+		if use_score_distill:
+			for k, v in teacher_stats.items():
+				info[f"diffusion_policy/{k}"] = v.detach()
+			if n_teacher > 0:
+				alpha_bar_tau = self.diffusion_policy.alpha_bar[tau[teacher_idx]].view(-1, 1, 1)
+				eps_target_teacher = -teacher_scores * torch.sqrt(1.0 - alpha_bar_tau)
+				info["diffusion_policy/teacher_eps_target_norm"] = eps_target_teacher.detach().norm(dim=-1).mean()
+			else:
+				info["diffusion_policy/teacher_eps_target_norm"] = torch.tensor(0.0, device=self.device)
+		return info
 
 	def update_pi(self, zs, task):
 		"""
