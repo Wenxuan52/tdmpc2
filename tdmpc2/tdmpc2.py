@@ -52,6 +52,11 @@ class TDMPC2(torch.nn.Module):
 		self.distill_buffer = DistillBuffer(cfg) if cfg.get('diffusion_distill_enabled', False) else None
 		self._last_plan = None
 		self._last_z = None
+		self._last_plan_source = None
+		self._train_act_steps = 0
+		if self.cfg.get('policy_update_type', 'gaussian') == 'diffusion' and self.cfg.get('disable_gaussian_actor_when_diffusion', False):
+			for p in self.model._pi.parameters():
+				p.requires_grad_(False)
 		if cfg.compile:
 			print('Compiling update function with torch.compile...')
 			self._update = torch.compile(self._update, mode="reduce-overhead")
@@ -75,6 +80,28 @@ class TDMPC2(torch.nn.Module):
 
 	def _diffusion_plan(self, obs, t0=False, eval_mode=False, task=None):
 		return self._diffusion_planner.plan(self, obs, t0=t0, eval_mode=eval_mode, task=task)
+
+	def _teacher_plan(self, obs, t0=False, eval_mode=False, task=None):
+		planner_type = self.cfg.get('planner_type_teacher', self.cfg.get('planner_type', 'mppi'))
+		if planner_type == 'diffusion':
+			return self._diffusion_plan(obs, t0=t0, eval_mode=eval_mode, task=task)
+		if planner_type == 'mppi':
+			return self._plan(obs, t0=t0, eval_mode=eval_mode, task=task)
+		return self.plan(obs, t0=t0, eval_mode=eval_mode, task=task)
+
+	def _student_act_prob(self):
+		schedule = self.cfg.get('student_act_prob_schedule', 'constant')
+		p0 = float(self.cfg.get('student_act_prob', 0.0))
+		if schedule == 'constant':
+			return max(0.0, min(1.0, p0))
+		warmup = int(self.cfg.get('student_act_prob_warmup_steps', 0))
+		ramp = max(int(self.cfg.get('student_act_prob_ramp_steps', 1)), 1)
+		pf = float(self.cfg.get('student_act_prob_final', 1.0))
+		if self._train_act_steps <= warmup:
+			return max(0.0, min(1.0, p0))
+		alpha = min(1.0, (self._train_act_steps - warmup) / ramp)
+		p = p0 + alpha * (pf - p0)
+		return max(0.0, min(1.0, p))
 
 	def _diffusion_policy_plan(self, obs, t0=False, eval_mode=False, task=None):
 		_ = (t0, eval_mode)
@@ -158,7 +185,27 @@ class TDMPC2(torch.nn.Module):
 		if self.cfg.mpc:
 			self._last_plan = None
 			self._last_z = None
-			return self.plan(obs, t0=t0, eval_mode=eval_mode, task=task).cpu()
+			self._last_plan_source = None
+			if eval_mode:
+				action = self.plan(obs, t0=t0, eval_mode=eval_mode, task=task)
+				if self.cfg.get('planner_type', 'mppi') == 'diffusion_policy' and self.cfg.get('diffusion_policy_act', False):
+					self._last_plan_source = 'student'
+				else:
+					self._last_plan_source = 'teacher'
+				return action.cpu()
+			allow_mix = bool(self.cfg.get('student_act_mixing_enabled', self.cfg.get('policy_update_type', 'gaussian') == 'diffusion'))
+			use_student = False
+			if allow_mix:
+				p_student = self._student_act_prob()
+				use_student = bool(torch.rand((), device=self.device) < p_student)
+			if use_student:
+				action = self._diffusion_policy_plan(obs, t0=t0, eval_mode=eval_mode, task=task)
+				self._last_plan_source = 'student'
+			else:
+				action = self._teacher_plan(obs, t0=t0, eval_mode=eval_mode, task=task)
+				self._last_plan_source = 'teacher'
+			self._train_act_steps += 1
+			return action.cpu()
 		z = self.model.encode(obs, task)
 		action, info = self.model.pi(z, task)
 		if eval_mode:
@@ -259,17 +306,27 @@ class TDMPC2(torch.nn.Module):
 	def maybe_store_distill(self, task=None):
 		if self.distill_buffer is None or self._last_plan is None or self._last_z is None:
 			return
+		if self._last_plan_source == 'student' and not bool(self.cfg.get('diffusion_distill_store_student', True)):
+			return
 		action_mask = None
 		task_idx = 0 if task is None else int(task)
 		if self.cfg.multitask:
 			action_mask = self.model._action_masks[task_idx]
 		self.distill_buffer.add(self._last_z, self._last_plan, task_idx=task_idx, action_mask=action_mask)
 
-	def _update_diffusion_policy(self):
+	def _update_diffusion_policy(self, replay_buffer=None):
 		if self.distill_buffer is None or len(self.distill_buffer) < self.cfg.diffusion_distill_batch_size:
 			return None
 		B = int(self.cfg.diffusion_distill_batch_size)
 		z0, a0, task, action_mask = self.distill_buffer.sample(B, self.device)
+		data_source = self.cfg.get('diffusion_actor_data_source', 'distill')
+		if data_source == 'distill+replay_z' and replay_buffer is not None and not self.cfg.multitask:
+			obs_rb, _, _, _, _ = replay_buffer.sample()
+			replay_z0 = self.model.encode(obs_rb[0], None).detach()
+			n_mix = min(B, replay_z0.shape[0])
+			if n_mix > 0:
+				mix_idx = torch.randperm(B, device=self.device)[:n_mix]
+				z0[mix_idx] = replay_z0[:n_mix]
 		T = int(self.cfg.diffusion_steps)
 		tau = torch.randint(1, T, (B,), device=self.device)
 		eps = torch.randn_like(a0)
@@ -304,6 +361,10 @@ class TDMPC2(torch.nn.Module):
 					task_batch=task[teacher_idx] if self.cfg.multitask else None,
 					mask_batch=action_mask[teacher_idx],
 				)
+				if bool(self.cfg.get('debug_grad_check', False)):
+					for p in self.model.parameters():
+						if p.grad is not None and p.grad.abs().sum() > 0:
+							raise RuntimeError('Gradient pollution detected in world model during teacher score distillation.')
 				alpha_bar_tau = self.diffusion_policy.alpha_bar[tau[teacher_idx]].view(-1, 1, 1)
 				eps_target_teacher = -teacher_scores * torch.sqrt(1.0 - alpha_bar_tau)
 				eps_target_teacher = torch.nan_to_num(eps_target_teacher) * mask[teacher_idx]
@@ -337,6 +398,22 @@ class TDMPC2(torch.nn.Module):
 			else:
 				info["diffusion_policy/teacher_eps_target_norm"] = torch.tensor(0.0, device=self.device)
 		return info
+
+	def update_diffusion_actor(self, replay_buffer=None):
+		diff_info = self._update_diffusion_policy(replay_buffer=replay_buffer)
+		if diff_info is None:
+			return None
+		actor_info = TensorDict({
+			"actor_loss": diff_info["diffusion_policy/loss"],
+			"actor_loss_standard": diff_info["diffusion_policy/loss_standard"],
+			"actor_loss_teacher": diff_info["diffusion_policy/loss_teacher"],
+		})
+		for key in ["teacher_score_norm", "teacher_grad_norm"]:
+			diff_key = f"diffusion_policy/{key}"
+			if diff_key in diff_info.keys():
+				actor_info[f"actor_{key}"] = diff_info[diff_key]
+		actor_info.update(diff_info)
+		return actor_info
 
 	def update_pi(self, zs, task):
 		"""
@@ -443,7 +520,9 @@ class TDMPC2(torch.nn.Module):
 		self.optim.zero_grad(set_to_none=True)
 
 		# Update policy
-		pi_info = self.update_pi(zs.detach(), task)
+		pi_info = TensorDict({})
+		if self.cfg.get('policy_update_type', 'gaussian') == 'gaussian':
+			pi_info = self.update_pi(zs.detach(), task)
 
 		# Update target Q-functions
 		self.model.soft_update_target_Q()
@@ -479,8 +558,19 @@ class TDMPC2(torch.nn.Module):
 			kwargs["task"] = task
 		torch.compiler.cudagraph_mark_step_begin()
 		info = self._update(obs, action, reward, terminated, **kwargs)
-		if self.cfg.get('diffusion_distill_enabled', False):
-			diff_info = self._update_diffusion_policy()
+		policy_update_type = self.cfg.get('policy_update_type', 'gaussian')
+		if policy_update_type == 'diffusion':
+			diff_info = self.update_diffusion_actor(replay_buffer=buffer)
+			if diff_info is not None:
+				info.update(diff_info)
+			else:
+				info.update(TensorDict({
+					"actor_loss": torch.tensor(0.0, device=self.device),
+					"actor_loss_standard": torch.tensor(0.0, device=self.device),
+					"actor_loss_teacher": torch.tensor(0.0, device=self.device),
+				}))
+		elif self.cfg.get('diffusion_distill_enabled', False):
+			diff_info = self._update_diffusion_policy(replay_buffer=buffer)
 			if diff_info is not None:
 				info.update(diff_info)
 		return info

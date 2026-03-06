@@ -79,6 +79,19 @@ diffusion_teacher_std_floor: 1e-4
 diffusion_teacher_detach_weights: true
 diffusion_teacher_grad_norm_clip: 0.0
 diffusion_score_distill_batch_frac: 0.25
+policy_update_type: gaussian
+disable_gaussian_actor_when_diffusion: false
+student_act_mixing_enabled: false
+student_act_prob: 0.0
+student_act_prob_schedule: constant
+student_act_prob_final: 1.0
+student_act_prob_warmup_steps: 0
+student_act_prob_ramp_steps: 1000000
+student_act_use_eval: false
+planner_type_teacher: mppi
+diffusion_distill_store_student: true
+diffusion_actor_data_source: distill
+debug_grad_check: false
 
 # actor
 log_std_min: -10
