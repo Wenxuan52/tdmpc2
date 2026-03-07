@@ -1,3 +1,6 @@
+from contextlib import nullcontext
+from torch.profiler import record_function
+
 from time import time
 
 import numpy as np
@@ -71,9 +74,10 @@ class OnlineTrainer(Trainer):
 		batch_size=(1,))
 		return td
 
-	def train(self):
+	def train(self, profiler=None):
 		"""Train a TD-MPC2 agent."""
 		train_metrics, done, eval_next = {}, True, False
+
 		while self._step <= self.cfg.steps:
 			# Evaluate agent periodically
 			if self._step % self.cfg.eval_freq == 0:
@@ -82,46 +86,66 @@ class OnlineTrainer(Trainer):
 			# Reset environment
 			if done:
 				if eval_next:
-					eval_metrics = self.eval()
+					eval_ctx = record_function("online_eval") if profiler is not None else nullcontext()
+					with eval_ctx:
+						eval_metrics = self.eval()
 					eval_metrics.update(self.common_metrics())
 					self.logger.log(eval_metrics, 'eval')
 					eval_next = False
 
 				if self._step > 0:
 					if info['terminated'] and not self.cfg.episodic:
-						raise ValueError('Termination detected but you are not in episodic mode. ' \
-						'Set `episodic=true` to enable support for terminations.')
+						raise ValueError(
+							'Termination detected but you are not in episodic mode. '
+							'Set `episodic=true` to enable support for terminations.'
+						)
 					train_metrics.update(
 						episode_reward=torch.tensor([td['reward'] for td in self._tds[1:]]).sum(),
 						episode_success=info['success'],
 						episode_length=len(self._tds),
-						episode_terminated=info['terminated'])
+						episode_terminated=info['terminated'],
+					)
 					train_metrics.update(self.common_metrics())
 					self.logger.log(train_metrics, 'train')
 					self._ep_idx = self.buffer.add(torch.cat(self._tds))
 
-				obs = self.env.reset()
+				reset_ctx = record_function("env_reset") if profiler is not None else nullcontext()
+				with reset_ctx:
+					obs = self.env.reset()
 				self._tds = [self.to_td(obs)]
 
 			# Collect experience
-			if self._step > self.cfg.seed_steps:
-				action = self.agent.act(obs, t0=len(self._tds)==1)
-				self.agent.maybe_store_distill()
-			else:
-				action = self.env.rand_act()
-			obs, reward, done, info = self.env.step(action)
-			self._tds.append(self.to_td(obs, action, reward, info['terminated']))
+			collect_ctx = record_function("env_collect") if profiler is not None else nullcontext()
+			with collect_ctx:
+				if self._step > self.cfg.seed_steps:
+					act_ctx = record_function("agent_act") if profiler is not None else nullcontext()
+					with act_ctx:
+						action = self.agent.act(obs, t0=len(self._tds) == 1)
+						self.agent.maybe_store_distill()
+				else:
+					action = self.env.rand_act()
+
+				obs, reward, done, info = self.env.step(action)
+				self._tds.append(self.to_td(obs, action, reward, info['terminated']))
 
 			# Update agent
 			if self._step >= self.cfg.seed_steps:
-				if self._step == self.cfg.seed_steps:
-					num_updates = self.cfg.seed_steps
-					print('Pretraining agent on seed data...')
-				else:
-					num_updates = 1
-				for _ in range(num_updates):
-					_train_metrics = self.agent.update(self.buffer)
+				update_ctx = record_function("agent_update") if profiler is not None else nullcontext()
+				with update_ctx:
+					if self._step == self.cfg.seed_steps:
+						num_updates = self.cfg.seed_steps
+						print('Pretraining agent on seed data...')
+					else:
+						num_updates = 1
+
+					for _ in range(num_updates):
+						_train_metrics = self.agent.update(self.buffer)
+
 				train_metrics.update(_train_metrics)
+
+				# 只在真正发生 update 时推进 profiler
+				if profiler is not None:
+					profiler.step()
 
 			self._step += 1
 

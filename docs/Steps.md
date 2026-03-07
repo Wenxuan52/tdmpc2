@@ -151,7 +151,7 @@
 
 ### Step 4：联合训练 & 替换 TD-MPC2 的 `update_pi`
 
-TD-MPC2 现在的 actor 是一个高斯 policy prior `_pi`，更新方式是 `update_pi(zs)` 用 Q 做加权损失。 ([GitHub][1])
+TD-MPC2 现在的 actor 是一个高斯 policy prior `_pi`，更新方式是 `update_pi(zs)` 用 Q 做加权损失。
 当你有 diffusion policy 后，最终要做的是：
 
 * 把 `update_pi` 替换成 `update_diffusion_policy`：

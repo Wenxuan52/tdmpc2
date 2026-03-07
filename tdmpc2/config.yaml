@@ -129,7 +129,7 @@ save_agent: true
 seed: 1
 
 # convenience
-work_dir: /scratch_tide/wy524/tdmpc2/tdmpc2_runs
+work_dir: /scratch_tide/wy524/tdmpc2/tdmpc2/
 task_title: ???
 multitask: ???
 tasks: ???
@@ -141,3 +141,6 @@ action_dims: ???
 episode_lengths: ???
 seed_steps: ???
 bin_size: ???
+
+# Profile
+profiling: false

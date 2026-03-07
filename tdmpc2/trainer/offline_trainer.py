@@ -1,3 +1,6 @@
+from contextlib import nullcontext
+from torch.profiler import record_function
+
 import os
 from copy import deepcopy
 from time import time
@@ -65,18 +68,23 @@ class OfflineTrainer(Trainer):
 		if self.buffer.num_eps != expected_episodes:
 			print(f'WARNING: buffer has {self.buffer.num_eps} episodes, expected {expected_episodes} episodes for {self.cfg.task} task set.')
 
-	def train(self):
+	def train(self, profiler=None):
 		"""Train a TD-MPC2 agent."""
 		assert self.cfg.multitask and self.cfg.task in {'mt30', 'mt80'}, \
 			'Offline training only supports multitask training with mt30 or mt80 task sets.'
 		self._load_dataset()
-		
+
 		print(f'Training agent for {self.cfg.steps} iterations...')
 		metrics = {}
-		for i in range(self.cfg.steps):
 
-			# Update agent
-			train_metrics = self.agent.update(self.buffer)
+		for i in range(self.cfg.steps):
+			update_ctx = record_function("offline_agent_update") if profiler is not None else nullcontext()
+			with update_ctx:
+				train_metrics = self.agent.update(self.buffer)
+
+			# 每次 update 后推进一次 profiler
+			if profiler is not None:
+				profiler.step()
 
 			# Evaluate agent periodically
 			if i % self.cfg.eval_freq == 0 or i % 10_000 == 0:
@@ -85,11 +93,16 @@ class OfflineTrainer(Trainer):
 					'elapsed_time': time() - self._start_time,
 				}
 				metrics.update(train_metrics)
+
 				if i % self.cfg.eval_freq == 0:
-					metrics.update(self.eval())
+					eval_ctx = record_function("offline_eval") if profiler is not None else nullcontext()
+					with eval_ctx:
+						metrics.update(self.eval())
+
 					self.logger.pprint_multitask(metrics, self.cfg)
 					if i > 0:
 						self.logger.save_agent(self.agent, identifier=f'{i}')
+
 				self.logger.log(metrics, 'pretrain')
-			
+
 		self.logger.finish(self.agent)
