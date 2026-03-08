@@ -22,6 +22,7 @@ class OfflineTrainer(Trainer):
 		super().__init__(*args, **kwargs)
 		self._start_time = time()
 	
+	@torch.compiler.disable
 	def eval(self):
 		"""Evaluate a TD-MPC2 agent."""
 		results = dict()

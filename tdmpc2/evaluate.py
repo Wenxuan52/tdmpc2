@@ -18,6 +18,7 @@ torch.backends.cudnn.benchmark = True
 
 
 @hydra.main(config_name='config', config_path='.')
+@torch.compiler.disable
 def evaluate(cfg: dict):
 	"""
 	Script for evaluating a single-task / multi-task TD-MPC2 checkpoint.

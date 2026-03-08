@@ -12,6 +12,7 @@ class DiffusionPlanner:
 		self.cfg = cfg
 
 
+	@torch.compiler.disable
 	def _teacher_score_single(self, agent, z0, x_tau, tau, task, action_mask):
 		cfg = self.cfg
 		device = x_tau.device
@@ -117,6 +118,7 @@ class DiffusionPlanner:
 		}
 		return score_target.detach(), stats
 
+	@torch.compiler.disable
 	def compute_teacher_scores(self, agent, z0_batch, a_tau_batch, tau_batch, task_batch=None, mask_batch=None):
 		B = z0_batch.shape[0]
 		scores = []
@@ -140,6 +142,7 @@ class DiffusionPlanner:
 		stats = {k: torch.stack(v).mean() if len(v) > 0 else torch.tensor(0.0, device=z0_batch.device) for k, v in stats.items()}
 		return scores, stats
 
+	@torch.compiler.disable
 	def _estimate_value_grad_elite(self, agent, z0, actions, task, action_mask, mf_use_target_q, mf_q_type):
 		"""Differentiable trajectory value estimate for elite trajectories.
 
@@ -182,6 +185,7 @@ class DiffusionPlanner:
 		)
 		return (G + discount * (1 - termination) * Q).squeeze(-1)
 
+	@torch.compiler.disable
 	@torch.no_grad()
 	def plan(self, agent, obs, t0=False, eval_mode=False, task=None):
 		cfg = self.cfg

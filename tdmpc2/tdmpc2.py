@@ -57,9 +57,14 @@ class TDMPC2(torch.nn.Module):
 		if self.cfg.get('policy_update_type', 'gaussian') == 'diffusion' and self.cfg.get('disable_gaussian_actor_when_diffusion', False):
 			for p in self.model._pi.parameters():
 				p.requires_grad_(False)
+		self._compute_world_model_losses_fn = self._compute_world_model_losses
 		if cfg.compile:
-			print('Compiling update function with torch.compile...')
-			self._update = torch.compile(self._update, mode="reduce-overhead")
+			print('Compiling selective world-model loss helper with torch.compile...')
+			self._compute_world_model_losses_fn = torch.compile(
+				self._compute_world_model_losses,
+				fullgraph=False,
+				dynamic=False,
+			)
 
 	@property
 	def plan(self):
@@ -71,8 +76,6 @@ class TDMPC2(torch.nn.Module):
 			plan = self._diffusion_plan
 		elif planner_type == 'diffusion_policy' and self.cfg.get('diffusion_policy_act', False):
 			plan = self._diffusion_policy_plan
-		elif self.cfg.compile:
-			plan = torch.compile(self._plan, mode="reduce-overhead")
 		else:
 			plan = self._plan
 		self._plan_val = plan
@@ -165,6 +168,7 @@ class TDMPC2(torch.nn.Module):
 			self.diffusion_policy.load_state_dict(checkpoint["diffusion_policy"])
 		return
 
+	@torch.compiler.disable
 	@torch.no_grad()
 	def act(self, obs, t0=False, eval_mode=False, task=None):
 		"""
@@ -212,6 +216,7 @@ class TDMPC2(torch.nn.Module):
 			action = info["mean"]
 		return action[0].cpu()
 
+	@torch.compiler.disable
 	@torch.no_grad()
 	def _estimate_value(self, z, actions, task):
 		"""Estimate value of a trajectory starting at latent state z and executing given actions."""
@@ -229,6 +234,7 @@ class TDMPC2(torch.nn.Module):
 		action, _ = self.model.pi(z, task)
 		return G + discount * (1-termination) * self.model.Q(z, action, task, return_type='avg')
 
+	@torch.compiler.disable
 	@torch.no_grad()
 	def _plan(self, obs, t0=False, eval_mode=False, task=None):
 		"""
@@ -474,44 +480,24 @@ class TDMPC2(torch.nn.Module):
 
 		# Prepare for update
 		self.model.train()
-
-		# Latent rollout
-		zs = torch.empty(self.cfg.horizon+1, self.cfg.batch_size, self.cfg.latent_dim, device=self.device)
-		z = self.model.encode(obs[0], task)
-		zs[0] = z
-		consistency_loss = 0
-		for t, (_action, _next_z) in enumerate(zip(action.unbind(0), next_z.unbind(0))):
-			z = self.model.next(z, _action, task)
-			consistency_loss = consistency_loss + F.mse_loss(z, _next_z) * self.cfg.rho**t
-			zs[t+1] = z
-
-		# Predictions
-		_zs = zs[:-1]
-		qs = self.model.Q(_zs, action, task, return_type='all')
-		reward_preds = self.model.reward(_zs, action, task)
-		if self.cfg.episodic:
-			termination_pred = self.model.termination(zs[1:], task, unnormalized=True)
-
-		# Compute losses
-		reward_loss, value_loss = 0, 0
-		for t, (rew_pred_unbind, rew_unbind, td_targets_unbind, qs_unbind) in enumerate(zip(reward_preds.unbind(0), reward.unbind(0), td_targets.unbind(0), qs.unbind(1))):
-			reward_loss = reward_loss + math.soft_ce(rew_pred_unbind, rew_unbind, self.cfg).mean() * self.cfg.rho**t
-			for _, qs_unbind_unbind in enumerate(qs_unbind.unbind(0)):
-				value_loss = value_loss + math.soft_ce(qs_unbind_unbind, td_targets_unbind, self.cfg).mean() * self.cfg.rho**t
-
-		consistency_loss = consistency_loss / self.cfg.horizon
-		reward_loss = reward_loss / self.cfg.horizon
-		if self.cfg.episodic:
-			termination_loss = F.binary_cross_entropy_with_logits(termination_pred, terminated)
-		else:
-			termination_loss = 0.
-		value_loss = value_loss / (self.cfg.horizon * self.cfg.num_q)
-		total_loss = (
-			self.cfg.consistency_coef * consistency_loss +
-			self.cfg.reward_coef * reward_loss +
-			self.cfg.termination_coef * termination_loss +
-			self.cfg.value_coef * value_loss
+		loss_outputs = self._compute_world_model_losses_fn(
+			obs,
+			action,
+			reward,
+			terminated,
+			task,
+			next_z,
+			td_targets,
 		)
+		(
+			zs,
+			consistency_loss,
+			reward_loss,
+			value_loss,
+			termination_loss,
+			total_loss,
+			termination_pred,
+		) = loss_outputs
 
 		# Update model
 		total_loss.backward()
@@ -541,6 +527,47 @@ class TDMPC2(torch.nn.Module):
 			info.update(math.termination_statistics(torch.sigmoid(termination_pred[-1]), terminated[-1]))
 		info.update(pi_info)
 		return info.detach().mean()
+
+	def _compute_world_model_losses(self, obs, action, reward, terminated, task, next_z, td_targets):
+		# Latent rollout
+		zs = torch.empty(self.cfg.horizon+1, self.cfg.batch_size, self.cfg.latent_dim, device=self.device)
+		z = self.model.encode(obs[0], task)
+		zs[0] = z
+		consistency_loss = 0
+		for t, (_action, _next_z) in enumerate(zip(action.unbind(0), next_z.unbind(0))):
+			z = self.model.next(z, _action, task)
+			consistency_loss = consistency_loss + F.mse_loss(z, _next_z) * self.cfg.rho**t
+			zs[t+1] = z
+
+		# Predictions
+		_zs = zs[:-1]
+		qs = self.model.Q(_zs, action, task, return_type='all')
+		reward_preds = self.model.reward(_zs, action, task)
+		termination_pred = None
+		if self.cfg.episodic:
+			termination_pred = self.model.termination(zs[1:], task, unnormalized=True)
+
+		# Compute losses
+		reward_loss, value_loss = 0, 0
+		for t, (rew_pred_unbind, rew_unbind, td_targets_unbind, qs_unbind) in enumerate(zip(reward_preds.unbind(0), reward.unbind(0), td_targets.unbind(0), qs.unbind(1))):
+			reward_loss = reward_loss + math.soft_ce(rew_pred_unbind, rew_unbind, self.cfg).mean() * self.cfg.rho**t
+			for _, qs_unbind_unbind in enumerate(qs_unbind.unbind(0)):
+				value_loss = value_loss + math.soft_ce(qs_unbind_unbind, td_targets_unbind, self.cfg).mean() * self.cfg.rho**t
+
+		consistency_loss = consistency_loss / self.cfg.horizon
+		reward_loss = reward_loss / self.cfg.horizon
+		if self.cfg.episodic:
+			termination_loss = F.binary_cross_entropy_with_logits(termination_pred, terminated)
+		else:
+			termination_loss = 0.
+		value_loss = value_loss / (self.cfg.horizon * self.cfg.num_q)
+		total_loss = (
+			self.cfg.consistency_coef * consistency_loss +
+			self.cfg.reward_coef * reward_loss +
+			self.cfg.termination_coef * termination_loss +
+			self.cfg.value_coef * value_loss
+		)
+		return zs, consistency_loss, reward_loss, value_loss, termination_loss, total_loss, termination_pred
 
 	def update(self, buffer):
 		"""

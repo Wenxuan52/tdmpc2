@@ -28,6 +28,7 @@ class OnlineTrainer(Trainer):
 			steps_per_second=self._step / elapsed_time
 		)
 
+	@torch.compiler.disable
 	def eval(self):
 		"""Evaluate a TD-MPC2 agent."""
 		ep_rewards, ep_successes, ep_lengths = [], [], []
