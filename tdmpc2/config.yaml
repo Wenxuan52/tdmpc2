@@ -29,6 +29,7 @@ discount_max: 0.995
 buffer_size: 1_000_000
 exp_name: default
 data_dir: /scratch_tide/wy524/tdmpc2/tdmpc2_data/mt30
+save_model_freq: 0 # set >0 to save periodic checkpoints every N env steps (online training)
 
 
 # planning
@@ -70,6 +71,7 @@ diffusion_policy_weight_decay: 0.0
 diffusion_policy_steps: 10
 diffusion_policy_act: false
 diffusion_score_distill_enabled: false
+diffusion_score_loss_coef: 1.0
 diffusion_teacher_num_samples: 32
 diffusion_teacher_topk: 16
 diffusion_teacher_temp: 0.1

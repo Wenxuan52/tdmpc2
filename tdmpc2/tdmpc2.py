@@ -346,6 +346,7 @@ class TDMPC2(torch.nn.Module):
 			"teacher_grad_norm": torch.tensor(0.0, device=self.device),
 		}
 		if use_score_distill:
+			score_loss_coef = float(self.cfg.get('diffusion_score_loss_coef', 1.0))
 			frac = float(self.cfg.get('diffusion_score_distill_batch_frac', 0.25))
 			n_teacher = min(B, max(0, int(B * frac)))
 			perm = torch.randperm(B, device=self.device)
@@ -368,7 +369,7 @@ class TDMPC2(torch.nn.Module):
 				alpha_bar_tau = self.diffusion_policy.alpha_bar[tau[teacher_idx]].view(-1, 1, 1)
 				eps_target_teacher = -teacher_scores * torch.sqrt(1.0 - alpha_bar_tau)
 				eps_target_teacher = torch.nan_to_num(eps_target_teacher) * mask[teacher_idx]
-				teacher_loss = F.mse_loss(eps_hat[teacher_idx], eps_target_teacher)
+				teacher_loss = F.mse_loss(eps_hat[teacher_idx], eps_target_teacher) * score_loss_coef
 
 			if standard_idx.numel() > 0:
 				standard_loss = F.mse_loss(eps_hat[standard_idx], eps[standard_idx])

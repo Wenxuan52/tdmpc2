@@ -148,5 +148,8 @@ class OnlineTrainer(Trainer):
 					profiler.step()
 
 			self._step += 1
+			save_model_freq = int(self.cfg.get('save_model_freq', 0))
+			if save_model_freq > 0 and self._step > 0 and self._step % save_model_freq == 0:
+				self.logger.save_agent(self.agent, identifier=f'{self._step}')
 
 		self.logger.finish(self.agent)
