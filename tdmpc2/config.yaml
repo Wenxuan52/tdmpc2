@@ -45,8 +45,11 @@ diffusion_steps: 5
 diffusion_beta0: 1e-4
 diffusion_betaT: 1e-2
 diffusion_num_samples: 16
+diffusion_num_elites: 0
+diffusion_num_pi_trajs: 0
 diffusion_temperature: 0.5
 diffusion_action_noise: 0.05
+diffusion_clamp_each_step: false
 diffusion_log_stats: false
 
 # actor

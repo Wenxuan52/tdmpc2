@@ -38,6 +38,10 @@ class DiffusionPlanner:
 			action_mask = agent.model._action_masks[task].squeeze(0)
 			x_tau = x_tau * action_mask
 
+		num_elites = int(getattr(cfg, 'diffusion_num_elites', 0) or 0)
+		num_pi_trajs = int(getattr(cfg, 'diffusion_num_pi_trajs', 0) or 0)
+		clamp_each_step = bool(getattr(cfg, 'diffusion_clamp_each_step', False))
+
 		for tau in range(num_steps - 1, 0, -1):
 			alpha_bar_tau = alpha_bar[tau]
 			mean_cond = x_tau / torch.sqrt(alpha_bar_tau)
@@ -48,6 +52,19 @@ class DiffusionPlanner:
 				a0_samples = a0_samples * action_mask
 			a0_samples = a0_samples.clamp(-1, 1)
 
+			if num_pi_trajs > 0:
+				pi_trajs = min(num_pi_trajs, num_samples)
+				pi_actions = torch.empty(pi_trajs, cfg.horizon, cfg.action_dim, device=device)
+				z_pi = z0.repeat(pi_trajs, 1)
+				for t in range(cfg.horizon):
+					a_pi, _ = agent.model.pi(z_pi, task)
+					if action_mask is not None:
+						a_pi = a_pi * action_mask
+					a_pi = a_pi.clamp(-1, 1)
+					pi_actions[:, t] = a_pi
+					z_pi = agent.model.next(z_pi, a_pi, task)
+				a0_samples[:pi_trajs] = pi_actions
+
 			actions_for_value = a0_samples.permute(1, 0, 2)
 			values = agent._estimate_value(z, actions_for_value, task).nan_to_num(0.0).squeeze(-1)
 
@@ -57,14 +74,22 @@ class DiffusionPlanner:
 				g_std = torch.tensor(1.0, device=device)
 			logits = (values - g_mean) / g_std
 			logits = logits / max(temperature, 1e-6)
-			weights = torch.softmax(logits, dim=0)
-			a_bar = (weights[:, None, None] * a0_samples).sum(dim=0)
+			if num_elites > 0 and num_elites < num_samples:
+				elite_idx = torch.topk(values, num_elites, dim=0).indices
+				elite_logits = logits[elite_idx]
+				elite_logits = elite_logits - elite_logits.max()
+				elite_weights = torch.softmax(elite_logits, dim=0)
+				a_bar = (elite_weights[:, None, None] * a0_samples[elite_idx]).sum(dim=0)
+			else:
+				weights = torch.softmax(logits, dim=0)
+				a_bar = (weights[:, None, None] * a0_samples).sum(dim=0)
 
 			score_mb = (-x_tau + torch.sqrt(alpha_bar_tau) * a_bar) / (1.0 - alpha_bar_tau + 1e-8)
 			x_tau = (x_tau + (1.0 - alpha_bar_tau) * score_mb) / torch.sqrt(alphas[tau])
 			if action_mask is not None:
 				x_tau = x_tau * action_mask
-			x_tau = x_tau.clamp(-1, 1)
+			if clamp_each_step:
+				x_tau = x_tau.clamp(-1, 1)
 
 		x0 = x_tau
 		if action_mask is not None:
