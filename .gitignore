@@ -1,3 +1,8 @@
+*.err
+*.out
+scripts/
+tdmpc2_data/
+
 # Logging
 tdmpc2/logs/
 tdmpc2/outputs/
