@@ -1,11 +1,36 @@
 import torch
 
+from common import math
+
 
 class DiffusionPlanner:
 	"""No-gradient model-based diffusion planner for TD-MPC2."""
 
 	def __init__(self, cfg):
 		self.cfg = cfg
+
+	def _estimate_G(self, agent, z0, actions, task):
+		"""Differentiable trajectory score G used by the model-free score term."""
+		z = z0.repeat(actions.shape[0], 1)
+		G = torch.zeros(actions.shape[0], 1, device=z0.device)
+		discount = 1.0
+		alive = torch.ones_like(G)
+		for t in range(self.cfg.horizon):
+			reward = math.two_hot_inv(agent.model.reward(z, actions[:, t], task), self.cfg)
+			G = G + discount * alive * reward
+			z = agent.model.next(z, actions[:, t], task)
+			if self.cfg.multitask:
+				discount_update = agent.discount[task.long()].reshape(1, 1)
+			else:
+				discount_update = agent.discount
+			discount = discount * discount_update
+			if self.cfg.episodic:
+				alive = alive * (1.0 - agent.model.termination(z, task))
+
+		_, info = agent.model.pi(z, task)
+		q_bootstrap = agent.model.Q(z, info["mean"], task, return_type='avg')
+		G = G + discount * alive * q_bootstrap
+		return G.squeeze(-1)
 
 	@torch.no_grad()
 	def plan(self, agent, obs, t0=False, eval_mode=False, task=None):
@@ -16,6 +41,9 @@ class DiffusionPlanner:
 		num_samples = int(cfg.diffusion_num_samples)
 		temperature = float(cfg.diffusion_temperature)
 		action_noise = float(cfg.diffusion_action_noise)
+		mf_beta = float(getattr(cfg, 'diffusion_mf_beta', 0.2))
+		mf_beta = min(max(mf_beta, 0.0), 1.0)
+		mf_eta = float(getattr(cfg, 'diffusion_mf_eta', 1.0))
 
 		z0 = agent.model.encode(obs, task)
 		z = z0.repeat(num_samples, 1)
@@ -85,7 +113,24 @@ class DiffusionPlanner:
 				a_bar = (weights[:, None, None] * a0_samples).sum(dim=0)
 
 			score_mb = (-x_tau + torch.sqrt(alpha_bar_tau) * a_bar) / (1.0 - alpha_bar_tau + 1e-8)
-			x_tau = (x_tau + (1.0 - alpha_bar_tau) * score_mb) / torch.sqrt(alphas[tau])
+
+			with torch.enable_grad():
+				a0_for_grad = a0_samples.detach().requires_grad_(True)
+				G = self._estimate_G(agent, z0, a0_for_grad, task)
+				logits_mf = (mf_eta * G) - (mf_eta * G).max()
+				weights_mf = torch.softmax(logits_mf, dim=0)
+				weighted_grad = torch.autograd.grad(
+					outputs=mf_eta * G,
+					inputs=a0_for_grad,
+					grad_outputs=weights_mf,
+					create_graph=False,
+					retain_graph=False,
+					only_inputs=True,
+				)[0]
+			score_mf = weighted_grad.sum(dim=0) / (torch.sqrt(alpha_bar_tau) + 1e-8)
+			score = mf_beta * score_mf + (1.0 - mf_beta) * score_mb
+
+			x_tau = (x_tau + (1.0 - alpha_bar_tau) * score) / torch.sqrt(alphas[tau])
 			if action_mask is not None:
 				x_tau = x_tau * action_mask
 			if clamp_each_step:
