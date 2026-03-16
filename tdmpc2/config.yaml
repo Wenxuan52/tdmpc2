@@ -53,6 +53,8 @@ diffusion_clamp_each_step: false
 diffusion_log_stats: false
 diffusion_mf_beta: 0.2
 diffusion_mf_eta: 1.0
+diffusion_eval_compile: true
+diffusion_eval_compile_mode: reduce-overhead
 
 # actor
 log_std_min: -10

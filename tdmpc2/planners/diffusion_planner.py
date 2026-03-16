@@ -19,7 +19,18 @@ class DiffusionPlanner:
 		self._num_pi_trajs = int(getattr(cfg, 'diffusion_num_pi_trajs', 0) or 0)
 		self._clamp_each_step = bool(getattr(cfg, 'diffusion_clamp_each_step', False))
 		self._log_stats = bool(cfg.get('diffusion_log_stats', False))
+		self._eval_compile = bool(getattr(cfg, 'diffusion_eval_compile', True))
+		self._eval_compile_mode = str(getattr(cfg, 'diffusion_eval_compile_mode', 'reduce-overhead'))
 		self._schedule_cache = {}
+		self._compiled_eval_value_fn = None
+
+	def _get_value_fn(self, eval_mode):
+		"""Return value estimation function, optionally compiled for eval-only hot path."""
+		if not (eval_mode and self._eval_compile):
+			return None
+		if self._compiled_eval_value_fn is None:
+			self._compiled_eval_value_fn = torch.compile(self._estimate_value, mode=self._eval_compile_mode)
+		return self._compiled_eval_value_fn
 
 	def _get_schedule(self, device):
 		"""Return cached (betas, alphas, alpha_bar) diffusion schedule for a device."""
@@ -69,6 +80,7 @@ class DiffusionPlanner:
 		action_noise = self._action_noise
 		mf_beta = self._mf_beta
 		mf_eta = self._mf_eta
+		value_fn = self._get_value_fn(eval_mode)
 
 		z0 = agent.model.encode(obs, task)
 		z = z0.repeat(num_samples, 1)
@@ -117,7 +129,11 @@ class DiffusionPlanner:
 				a0_samples[:pi_trajs] = pi_actions
 
 			actions_for_value = a0_samples.permute(1, 0, 2)
-			values = agent._estimate_value(z, actions_for_value, task).nan_to_num(0.0).squeeze(-1)
+			if value_fn is None:
+				values = agent._estimate_value(z, actions_for_value, task)
+			else:
+				values = value_fn(agent, z, actions_for_value, task)
+			values = values.nan_to_num(0.0).squeeze(-1)
 
 			g_mean = values.mean()
 			g_std = values.std()
