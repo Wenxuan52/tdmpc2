@@ -8,6 +8,33 @@ class DiffusionPlanner:
 
 	def __init__(self, cfg):
 		self.cfg = cfg
+		self._num_steps = max(int(cfg.diffusion_steps), 2)
+		self._num_samples = int(cfg.diffusion_num_samples)
+		self._temperature = float(cfg.diffusion_temperature)
+		self._action_noise = float(cfg.diffusion_action_noise)
+		self._mf_beta = float(getattr(cfg, 'diffusion_mf_beta', 0.2))
+		self._mf_beta = min(max(self._mf_beta, 0.0), 1.0)
+		self._mf_eta = float(getattr(cfg, 'diffusion_mf_eta', 1.0))
+		self._num_elites = int(getattr(cfg, 'diffusion_num_elites', 0) or 0)
+		self._num_pi_trajs = int(getattr(cfg, 'diffusion_num_pi_trajs', 0) or 0)
+		self._clamp_each_step = bool(getattr(cfg, 'diffusion_clamp_each_step', False))
+		self._log_stats = bool(cfg.get('diffusion_log_stats', False))
+		self._schedule_cache = {}
+
+	def _get_schedule(self, device):
+		"""Return cached (betas, alphas, alpha_bar) diffusion schedule for a device."""
+		cache_key = str(device)
+		if cache_key not in self._schedule_cache:
+			betas = torch.linspace(
+				self.cfg.diffusion_beta0,
+				self.cfg.diffusion_betaT,
+				self._num_steps,
+				device=device,
+			)
+			alphas = 1.0 - betas
+			alpha_bar = torch.cumprod(alphas, dim=0)
+			self._schedule_cache[cache_key] = (betas, alphas, alpha_bar)
+		return self._schedule_cache[cache_key]
 
 	def _estimate_G(self, agent, z0, actions, task):
 		"""Differentiable trajectory score G used by the model-free score term."""
@@ -36,21 +63,17 @@ class DiffusionPlanner:
 	def plan(self, agent, obs, t0=False, eval_mode=False, task=None):
 		cfg = self.cfg
 		device = agent.device
-
-		num_steps = max(int(cfg.diffusion_steps), 2)
-		num_samples = int(cfg.diffusion_num_samples)
-		temperature = float(cfg.diffusion_temperature)
-		action_noise = float(cfg.diffusion_action_noise)
-		mf_beta = float(getattr(cfg, 'diffusion_mf_beta', 0.2))
-		mf_beta = min(max(mf_beta, 0.0), 1.0)
-		mf_eta = float(getattr(cfg, 'diffusion_mf_eta', 1.0))
+		num_steps = self._num_steps
+		num_samples = self._num_samples
+		temperature = self._temperature
+		action_noise = self._action_noise
+		mf_beta = self._mf_beta
+		mf_eta = self._mf_eta
 
 		z0 = agent.model.encode(obs, task)
 		z = z0.repeat(num_samples, 1)
 
-		betas = torch.linspace(cfg.diffusion_beta0, cfg.diffusion_betaT, num_steps, device=device)
-		alphas = 1.0 - betas
-		alpha_bar = torch.cumprod(alphas, dim=0)
+		_, alphas, alpha_bar = self._get_schedule(device)
 
 		if t0:
 			mean0 = torch.zeros(cfg.horizon, cfg.action_dim, device=device)
@@ -66,9 +89,9 @@ class DiffusionPlanner:
 			action_mask = agent.model._action_masks[task].squeeze(0)
 			x_tau = x_tau * action_mask
 
-		num_elites = int(getattr(cfg, 'diffusion_num_elites', 0) or 0)
-		num_pi_trajs = int(getattr(cfg, 'diffusion_num_pi_trajs', 0) or 0)
-		clamp_each_step = bool(getattr(cfg, 'diffusion_clamp_each_step', False))
+		num_elites = self._num_elites
+		num_pi_trajs = self._num_pi_trajs
+		clamp_each_step = self._clamp_each_step
 
 		for tau in range(num_steps - 1, 0, -1):
 			alpha_bar_tau = alpha_bar[tau]
@@ -140,7 +163,7 @@ class DiffusionPlanner:
 		if action_mask is not None:
 			x0 = x0 * action_mask
 		x0 = x0.clamp(-1, 1)
-		if cfg.get('diffusion_log_stats', False):
+		if self._log_stats:
 			print(
 				f"[DiffusionPlanner] action_mean={x0.mean().item():.4f} action_std={x0.std().item():.4f} "
 				f"score_mean={values.mean().item():.4f} score_std={values.std().item():.4f}"
