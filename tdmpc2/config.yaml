@@ -28,7 +28,7 @@ discount_min: 0.95
 discount_max: 0.995
 buffer_size: 1_000_000
 exp_name: default
-data_dir: /scratch_tide/wy524/tdmpc2/tdmpc2_data
+data_dir: /scratch_tide/wy524/tdmpc2/tdmpc2_data/mt30
 
 # planning
 mpc: true
@@ -44,9 +44,9 @@ temperature: 0.5
 diffusion_steps: 5
 diffusion_beta0: 1e-4
 diffusion_betaT: 1e-2
-diffusion_num_samples: 16
-diffusion_num_elites: 0
-diffusion_num_pi_trajs: 0
+diffusion_num_samples: 512
+diffusion_num_elites: 64
+diffusion_num_pi_trajs: 24
 diffusion_temperature: 0.5
 diffusion_action_noise: 0.05
 diffusion_clamp_each_step: false
