@@ -23,13 +23,18 @@ class DiffusionPlanner:
 		self._eval_compile_mode = str(getattr(cfg, 'diffusion_eval_compile_mode', 'reduce-overhead'))
 		self._schedule_cache = {}
 		self._compiled_eval_value_fn = None
+		self._compiled_eval_agent_id = None
 
-	def _get_value_fn(self, eval_mode):
+	def _get_value_fn(self, agent, eval_mode):
 		"""Return value estimation function, optionally compiled for eval-only hot path."""
 		if not (eval_mode and self._eval_compile):
 			return None
-		if self._compiled_eval_value_fn is None:
-			self._compiled_eval_value_fn = torch.compile(self._estimate_value, mode=self._eval_compile_mode)
+		agent_id = id(agent)
+		if self._compiled_eval_value_fn is None or self._compiled_eval_agent_id != agent_id:
+			def _value_fn(z, actions, task):
+				return agent._estimate_value(z, actions, task)
+			self._compiled_eval_value_fn = torch.compile(_value_fn, mode=self._eval_compile_mode)
+			self._compiled_eval_agent_id = agent_id
 		return self._compiled_eval_value_fn
 
 	def _get_schedule(self, device):
@@ -80,7 +85,7 @@ class DiffusionPlanner:
 		action_noise = self._action_noise
 		mf_beta = self._mf_beta
 		mf_eta = self._mf_eta
-		value_fn = self._get_value_fn(eval_mode)
+		value_fn = self._get_value_fn(agent, eval_mode)
 
 		z0 = agent.model.encode(obs, task)
 		z = z0.repeat(num_samples, 1)
@@ -132,7 +137,7 @@ class DiffusionPlanner:
 			if value_fn is None:
 				values = agent._estimate_value(z, actions_for_value, task)
 			else:
-				values = value_fn(agent, z, actions_for_value, task)
+				values = value_fn(z, actions_for_value, task)
 			values = values.nan_to_num(0.0).squeeze(-1)
 
 			g_mean = values.mean()
