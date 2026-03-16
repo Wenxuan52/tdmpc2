@@ -8,6 +8,32 @@ class DiffusionPlanner:
 
 	def __init__(self, cfg):
 		self.cfg = cfg
+		self._num_steps = max(int(cfg.diffusion_steps), 2)
+		self._num_samples = int(cfg.diffusion_num_samples)
+		self._temperature = max(float(cfg.diffusion_temperature), 1e-6)
+		self._action_noise = float(cfg.diffusion_action_noise)
+		self._mf_beta = min(max(float(getattr(cfg, 'diffusion_mf_beta', 0.2)), 0.0), 1.0)
+		self._mf_eta = float(getattr(cfg, 'diffusion_mf_eta', 1.0))
+		self._num_elites = int(getattr(cfg, 'diffusion_num_elites', 0) or 0)
+		self._num_pi_trajs = int(getattr(cfg, 'diffusion_num_pi_trajs', 0) or 0)
+		self._clamp_each_step = bool(getattr(cfg, 'diffusion_clamp_each_step', False))
+		self._mf_every = max(int(getattr(cfg, 'diffusion_mf_every', 1)), 1)
+		self._compile = bool(getattr(cfg, 'diffusion_compile', True))
+		self._cached_device = None
+		self._cached_schedule = None
+		self._plan_fn = self._plan_impl
+		if self._compile and hasattr(torch, 'compile'):
+			self._plan_fn = torch.compile(self._plan_impl, mode="reduce-overhead", fullgraph=False)
+
+	def _get_schedule(self, device):
+		if self._cached_schedule is not None and self._cached_device == device:
+			return self._cached_schedule
+		betas = torch.linspace(self.cfg.diffusion_beta0, self.cfg.diffusion_betaT, self._num_steps, device=device)
+		alphas = 1.0 - betas
+		alpha_bar = torch.cumprod(alphas, dim=0)
+		self._cached_schedule = (alphas, alpha_bar)
+		self._cached_device = device
+		return self._cached_schedule
 
 	def _estimate_G(self, agent, z0, actions, task):
 		"""Differentiable trajectory score G used by the model-free score term."""
@@ -15,14 +41,13 @@ class DiffusionPlanner:
 		G = torch.zeros(actions.shape[0], 1, device=z0.device)
 		discount = 1.0
 		alive = torch.ones_like(G)
+		discount_update = None if self.cfg.multitask else agent.discount
 		for t in range(self.cfg.horizon):
 			reward = math.two_hot_inv(agent.model.reward(z, actions[:, t], task), self.cfg)
 			G = G + discount * alive * reward
 			z = agent.model.next(z, actions[:, t], task)
 			if self.cfg.multitask:
 				discount_update = agent.discount[task.long()].reshape(1, 1)
-			else:
-				discount_update = agent.discount
 			discount = discount * discount_update
 			if self.cfg.episodic:
 				alive = alive * (1.0 - agent.model.termination(z, task))
@@ -32,25 +57,13 @@ class DiffusionPlanner:
 		G = G + discount * alive * q_bootstrap
 		return G.squeeze(-1)
 
-	@torch.no_grad()
-	def plan(self, agent, obs, t0=False, eval_mode=False, task=None):
+	def _plan_impl(self, agent, obs, t0=False, eval_mode=False, task=None):
 		cfg = self.cfg
 		device = agent.device
 
-		num_steps = max(int(cfg.diffusion_steps), 2)
-		num_samples = int(cfg.diffusion_num_samples)
-		temperature = float(cfg.diffusion_temperature)
-		action_noise = float(cfg.diffusion_action_noise)
-		mf_beta = float(getattr(cfg, 'diffusion_mf_beta', 0.2))
-		mf_beta = min(max(mf_beta, 0.0), 1.0)
-		mf_eta = float(getattr(cfg, 'diffusion_mf_eta', 1.0))
-
 		z0 = agent.model.encode(obs, task)
-		z = z0.repeat(num_samples, 1)
-
-		betas = torch.linspace(cfg.diffusion_beta0, cfg.diffusion_betaT, num_steps, device=device)
-		alphas = 1.0 - betas
-		alpha_bar = torch.cumprod(alphas, dim=0)
+		z = z0.repeat(self._num_samples, 1)
+		alphas, alpha_bar = self._get_schedule(device)
 
 		if t0:
 			mean0 = torch.zeros(cfg.horizon, cfg.action_dim, device=device)
@@ -66,22 +79,19 @@ class DiffusionPlanner:
 			action_mask = agent.model._action_masks[task].squeeze(0)
 			x_tau = x_tau * action_mask
 
-		num_elites = int(getattr(cfg, 'diffusion_num_elites', 0) or 0)
-		num_pi_trajs = int(getattr(cfg, 'diffusion_num_pi_trajs', 0) or 0)
-		clamp_each_step = bool(getattr(cfg, 'diffusion_clamp_each_step', False))
-
-		for tau in range(num_steps - 1, 0, -1):
+		values = torch.zeros(self._num_samples, device=device)
+		for tau in range(self._num_steps - 1, 0, -1):
 			alpha_bar_tau = alpha_bar[tau]
 			mean_cond = x_tau / torch.sqrt(alpha_bar_tau)
 			std_cond = torch.sqrt((1.0 - alpha_bar_tau) / alpha_bar_tau)
-			eps = torch.randn(num_samples, cfg.horizon, cfg.action_dim, device=device)
+			eps = torch.randn(self._num_samples, cfg.horizon, cfg.action_dim, device=device)
 			a0_samples = mean_cond.unsqueeze(0) + std_cond * eps
 			if action_mask is not None:
 				a0_samples = a0_samples * action_mask
 			a0_samples = a0_samples.clamp(-1, 1)
 
-			if num_pi_trajs > 0:
-				pi_trajs = min(num_pi_trajs, num_samples)
+			if self._num_pi_trajs > 0:
+				pi_trajs = min(self._num_pi_trajs, self._num_samples)
 				pi_actions = torch.empty(pi_trajs, cfg.horizon, cfg.action_dim, device=device)
 				z_pi = z0.repeat(pi_trajs, 1)
 				for t in range(cfg.horizon):
@@ -97,13 +107,11 @@ class DiffusionPlanner:
 			values = agent._estimate_value(z, actions_for_value, task).nan_to_num(0.0).squeeze(-1)
 
 			g_mean = values.mean()
-			g_std = values.std()
-			if g_std < 1e-4:
-				g_std = torch.tensor(1.0, device=device)
+			g_std = values.std().clamp_min(1e-4)
 			logits = (values - g_mean) / g_std
-			logits = logits / max(temperature, 1e-6)
-			if num_elites > 0 and num_elites < num_samples:
-				elite_idx = torch.topk(values, num_elites, dim=0).indices
+			logits = logits / self._temperature
+			if self._num_elites > 0 and self._num_elites < self._num_samples:
+				elite_idx = torch.topk(values, self._num_elites, dim=0).indices
 				elite_logits = logits[elite_idx]
 				elite_logits = elite_logits - elite_logits.max()
 				elite_weights = torch.softmax(elite_logits, dim=0)
@@ -114,26 +122,30 @@ class DiffusionPlanner:
 
 			score_mb = (-x_tau + torch.sqrt(alpha_bar_tau) * a_bar) / (1.0 - alpha_bar_tau + 1e-8)
 
-			with torch.enable_grad():
-				a0_for_grad = a0_samples.detach().requires_grad_(True)
-				G = self._estimate_G(agent, z0, a0_for_grad, task)
-				logits_mf = (mf_eta * G) - (mf_eta * G).max()
-				weights_mf = torch.softmax(logits_mf, dim=0)
-				weighted_grad = torch.autograd.grad(
-					outputs=mf_eta * G,
-					inputs=a0_for_grad,
-					grad_outputs=weights_mf,
-					create_graph=False,
-					retain_graph=False,
-					only_inputs=True,
-				)[0]
-			score_mf = weighted_grad.sum(dim=0) / (torch.sqrt(alpha_bar_tau) + 1e-8)
-			score = mf_beta * score_mf + (1.0 - mf_beta) * score_mb
+			use_mf = self._mf_beta > 0.0 and ((self._num_steps - 1 - tau) % self._mf_every == 0)
+			if use_mf:
+				with torch.enable_grad():
+					a0_for_grad = a0_samples.detach().requires_grad_(True)
+					G = self._estimate_G(agent, z0, a0_for_grad, task)
+					logits_mf = (self._mf_eta * G) - (self._mf_eta * G).max()
+					weights_mf = torch.softmax(logits_mf, dim=0)
+					weighted_grad = torch.autograd.grad(
+						outputs=self._mf_eta * G,
+						inputs=a0_for_grad,
+						grad_outputs=weights_mf,
+						create_graph=False,
+						retain_graph=False,
+						only_inputs=True,
+					)[0]
+				score_mf = weighted_grad.sum(dim=0) / (torch.sqrt(alpha_bar_tau) + 1e-8)
+				score = self._mf_beta * score_mf + (1.0 - self._mf_beta) * score_mb
+			else:
+				score = score_mb
 
 			x_tau = (x_tau + (1.0 - alpha_bar_tau) * score) / torch.sqrt(alphas[tau])
 			if action_mask is not None:
 				x_tau = x_tau * action_mask
-			if clamp_each_step:
+			if self._clamp_each_step:
 				x_tau = x_tau.clamp(-1, 1)
 
 		x0 = x_tau
@@ -149,8 +161,11 @@ class DiffusionPlanner:
 
 		action = x0[0]
 		if not eval_mode:
-			action = action + torch.randn_like(action) * action_noise
+			action = action + torch.randn_like(action) * self._action_noise
 			if action_mask is not None:
 				action = action * action_mask
-		action = action.clamp(-1, 1)
-		return action
+		return action.clamp(-1, 1)
+
+	@torch.no_grad()
+	def plan(self, agent, obs, t0=False, eval_mode=False, task=None):
+		return self._plan_fn(agent, obs, t0=t0, eval_mode=eval_mode, task=task)
