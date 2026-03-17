@@ -15,11 +15,31 @@ class DiffusionPlanner:
 		self._mf_beta = float(getattr(cfg, 'diffusion_mf_beta', 0.2))
 		self._mf_beta = min(max(self._mf_beta, 0.0), 1.0)
 		self._mf_eta = float(getattr(cfg, 'diffusion_mf_eta', 1.0))
+		self._num_samples_mf = int(getattr(cfg, 'diffusion_num_samples_mf', 64))
+		self._num_samples_mf = max(self._num_samples_mf, 1)
+		self._compute_score_mf_every = int(getattr(cfg, 'compute_score_mf_every', 2))
+		self._compute_score_mf_every = max(self._compute_score_mf_every, 1)
 		self._num_elites = int(getattr(cfg, 'diffusion_num_elites', 0) or 0)
 		self._num_pi_trajs = int(getattr(cfg, 'diffusion_num_pi_trajs', 0) or 0)
 		self._clamp_each_step = bool(getattr(cfg, 'diffusion_clamp_each_step', False))
 		self._log_stats = bool(cfg.get('diffusion_log_stats', False))
+		self._eval_compile = bool(getattr(cfg, 'diffusion_eval_compile', True))
+		self._eval_compile_mode = str(getattr(cfg, 'diffusion_eval_compile_mode', 'reduce-overhead'))
 		self._schedule_cache = {}
+		self._compiled_eval_value_fn = None
+		self._compiled_eval_agent_id = None
+
+	def _get_value_fn(self, agent, eval_mode):
+		"""Return value estimation function, optionally compiled for eval-only hot path."""
+		if not (eval_mode and self._eval_compile):
+			return None
+		agent_id = id(agent)
+		if self._compiled_eval_value_fn is None or self._compiled_eval_agent_id != agent_id:
+			def _value_fn(z, actions, task):
+				return agent._estimate_value(z, actions, task)
+			self._compiled_eval_value_fn = torch.compile(_value_fn, mode=self._eval_compile_mode)
+			self._compiled_eval_agent_id = agent_id
+		return self._compiled_eval_value_fn
 
 	def _get_schedule(self, device):
 		"""Return cached (betas, alphas, alpha_bar) diffusion schedule for a device."""
@@ -69,6 +89,9 @@ class DiffusionPlanner:
 		action_noise = self._action_noise
 		mf_beta = self._mf_beta
 		mf_eta = self._mf_eta
+		num_samples_mf = min(self._num_samples_mf, num_samples)
+		compute_score_mf_every = self._compute_score_mf_every
+		value_fn = self._get_value_fn(agent, eval_mode)
 
 		z0 = agent.model.encode(obs, task)
 		z = z0.repeat(num_samples, 1)
@@ -117,7 +140,11 @@ class DiffusionPlanner:
 				a0_samples[:pi_trajs] = pi_actions
 
 			actions_for_value = a0_samples.permute(1, 0, 2)
-			values = agent._estimate_value(z, actions_for_value, task).nan_to_num(0.0).squeeze(-1)
+			if value_fn is None:
+				values = agent._estimate_value(z, actions_for_value, task)
+			else:
+				values = value_fn(z, actions_for_value, task)
+			values = values.nan_to_num(0.0).squeeze(-1)
 
 			g_mean = values.mean()
 			g_std = values.std()
@@ -137,21 +164,31 @@ class DiffusionPlanner:
 
 			score_mb = (-x_tau + torch.sqrt(alpha_bar_tau) * a_bar) / (1.0 - alpha_bar_tau + 1e-8)
 
-			with torch.enable_grad():
-				a0_for_grad = a0_samples.detach().requires_grad_(True)
-				G = self._estimate_G(agent, z0, a0_for_grad, task)
-				logits_mf = (mf_eta * G) - (mf_eta * G).max()
-				weights_mf = torch.softmax(logits_mf, dim=0)
-				weighted_grad = torch.autograd.grad(
-					outputs=mf_eta * G,
-					inputs=a0_for_grad,
-					grad_outputs=weights_mf,
-					create_graph=False,
-					retain_graph=False,
-					only_inputs=True,
-				)[0]
-			score_mf = weighted_grad.sum(dim=0) / (torch.sqrt(alpha_bar_tau) + 1e-8)
-			score = mf_beta * score_mf + (1.0 - mf_beta) * score_mb
+			iter_idx = (num_steps - 1) - tau
+			compute_score_mf = (mf_beta > 0.0) and (iter_idx % compute_score_mf_every == 0)
+			if compute_score_mf:
+				mf_idx = torch.topk(values, num_samples_mf, dim=0).indices if num_samples_mf < num_samples else None
+				with torch.enable_grad():
+					if mf_idx is None:
+						a0_for_grad = a0_samples.detach().requires_grad_(True)
+						G = self._estimate_G(agent, z0, a0_for_grad, task)
+					else:
+						a0_for_grad = a0_samples[mf_idx].detach().requires_grad_(True)
+						G = self._estimate_G(agent, z0, a0_for_grad, task)
+					logits_mf = (mf_eta * G) - (mf_eta * G).max()
+					weights_mf = torch.softmax(logits_mf, dim=0)
+					weighted_grad = torch.autograd.grad(
+						outputs=mf_eta * G,
+						inputs=a0_for_grad,
+						grad_outputs=weights_mf,
+						create_graph=False,
+						retain_graph=False,
+						only_inputs=True,
+					)[0]
+				score_mf = weighted_grad.sum(dim=0) / (torch.sqrt(alpha_bar_tau) + 1e-8)
+				score = mf_beta * score_mf + (1.0 - mf_beta) * score_mb
+			else:
+				score = score_mb
 
 			x_tau = (x_tau + (1.0 - alpha_bar_tau) * score) / torch.sqrt(alphas[tau])
 			if action_mask is not None:
