@@ -23,11 +23,17 @@ class DiffusionPlanner:
 		self._num_pi_trajs = int(getattr(cfg, 'diffusion_num_pi_trajs', 0) or 0)
 		self._clamp_each_step = bool(getattr(cfg, 'diffusion_clamp_each_step', False))
 		self._log_stats = bool(cfg.get('diffusion_log_stats', False))
+
 		self._eval_compile = bool(getattr(cfg, 'diffusion_eval_compile', True))
 		self._eval_compile_mode = str(getattr(cfg, 'diffusion_eval_compile_mode', 'reduce-overhead'))
+		self._mf_forward_compile = bool(getattr(cfg, 'diffusion_mf_forward_compile', True))
+		self._mf_forward_compile_mode = str(getattr(cfg, 'diffusion_mf_forward_compile_mode', 'reduce-overhead'))
+
 		self._schedule_cache = {}
 		self._compiled_eval_value_fn = None
 		self._compiled_eval_agent_id = None
+		self._compiled_mf_G_fn = None
+		self._compiled_mf_G_agent_id = None
 
 	def _get_value_fn(self, agent, eval_mode):
 		"""Return value estimation function, optionally compiled for eval-only hot path."""
@@ -40,6 +46,18 @@ class DiffusionPlanner:
 			self._compiled_eval_value_fn = torch.compile(_value_fn, mode=self._eval_compile_mode)
 			self._compiled_eval_agent_id = agent_id
 		return self._compiled_eval_value_fn
+
+	def _get_mf_G_fn(self, agent):
+		"""Return function for MF forward pass G, optionally compiled."""
+		if not self._mf_forward_compile:
+			return None
+		agent_id = id(agent)
+		if self._compiled_mf_G_fn is None or self._compiled_mf_G_agent_id != agent_id:
+			def _mf_G_fn(z0, actions, task):
+				return self._estimate_G(agent, z0, actions, task)
+			self._compiled_mf_G_fn = torch.compile(_mf_G_fn, mode=self._mf_forward_compile_mode)
+			self._compiled_mf_G_agent_id = agent_id
+		return self._compiled_mf_G_fn
 
 	def _get_schedule(self, device):
 		"""Return cached (betas, alphas, alpha_bar) diffusion schedule for a device."""
@@ -92,6 +110,7 @@ class DiffusionPlanner:
 		num_samples_mf = min(self._num_samples_mf, num_samples)
 		compute_score_mf_every = self._compute_score_mf_every
 		value_fn = self._get_value_fn(agent, eval_mode)
+		mf_G_fn = self._get_mf_G_fn(agent)
 
 		z0 = agent.model.encode(obs, task)
 		z = z0.repeat(num_samples, 1)
@@ -171,10 +190,12 @@ class DiffusionPlanner:
 				with torch.enable_grad():
 					if mf_idx is None:
 						a0_for_grad = a0_samples.detach().requires_grad_(True)
-						G = self._estimate_G(agent, z0, a0_for_grad, task)
 					else:
 						a0_for_grad = a0_samples[mf_idx].detach().requires_grad_(True)
+					if mf_G_fn is None:
 						G = self._estimate_G(agent, z0, a0_for_grad, task)
+					else:
+						G = mf_G_fn(z0, a0_for_grad, task)
 					logits_mf = (mf_eta * G) - (mf_eta * G).max()
 					weights_mf = torch.softmax(logits_mf, dim=0)
 					weighted_grad = torch.autograd.grad(

@@ -57,6 +57,8 @@ diffusion_num_samples_mf: 64
 compute_score_mf_every: 2
 diffusion_eval_compile: false
 diffusion_eval_compile_mode: reduce-overhead
+diffusion_mf_forward_compile: true
+diffusion_mf_forward_compile_mode: reduce-overhead
 
 # actor
 log_std_min: -10
