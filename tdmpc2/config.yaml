@@ -10,6 +10,7 @@ episodic: false
 checkpoint: ???
 eval_episodes: 10
 eval_freq: 50000
+save_model_every: 100_000
 
 # training
 steps: 4_000_000
@@ -53,6 +54,12 @@ diffusion_clamp_each_step: false
 diffusion_log_stats: false
 diffusion_mf_beta: 0.2
 diffusion_mf_eta: 1.0
+diffusion_num_samples_mf: 64
+compute_score_mf_every: 2
+diffusion_eval_compile: true
+diffusion_eval_compile_mode: reduce-overhead
+diffusion_mf_forward_compile: true
+diffusion_mf_forward_compile_mode: reduce-overhead
 
 # actor
 log_std_min: -10

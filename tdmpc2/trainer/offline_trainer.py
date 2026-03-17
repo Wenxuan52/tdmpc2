@@ -72,23 +72,30 @@ class OfflineTrainer(Trainer):
 		
 		print(f'Training agent for {self.cfg.steps} iterations...')
 		metrics = {}
+		eval_freq = int(getattr(self.cfg, 'eval_freq', 0) or 0)
+		save_model_every = int(getattr(self.cfg, 'save_model_every', 100_000) or 0)
 		for i in range(self.cfg.steps):
 
 			# Update agent
 			train_metrics = self.agent.update(self.buffer)
+			eval_due = eval_freq > 0 and i % eval_freq == 0
+			save_due = save_model_every > 0 and i > 0 and i % save_model_every == 0
+			log_due = eval_due or i % 10_000 == 0
 
 			# Evaluate agent periodically
-			if i % self.cfg.eval_freq == 0 or i % 10_000 == 0:
+			if log_due:
 				metrics = {
 					'iteration': i,
 					'elapsed_time': time() - self._start_time,
 				}
 				metrics.update(train_metrics)
-				if i % self.cfg.eval_freq == 0:
+				if eval_due:
 					metrics.update(self.eval())
 					self.logger.pprint_multitask(metrics, self.cfg)
-					if i > 0:
-						self.logger.save_agent(self.agent, identifier=f'{i}')
 				self.logger.log(metrics, 'pretrain')
+
+			# Save model periodically (independent from eval)
+			if save_due:
+				self.logger.save_agent(self.agent, identifier=f'{i}')
 			
 		self.logger.finish(self.agent)
