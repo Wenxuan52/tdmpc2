@@ -55,7 +55,7 @@ diffusion_mf_beta: 0.2
 diffusion_mf_eta: 1.0
 diffusion_num_samples_mf: 64
 compute_score_mf_every: 2
-diffusion_eval_compile: true
+diffusion_eval_compile: false
 diffusion_eval_compile_mode: reduce-overhead
 
 # actor
