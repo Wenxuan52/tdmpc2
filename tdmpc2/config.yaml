@@ -10,6 +10,7 @@ episodic: false
 checkpoint: ???
 eval_episodes: 10
 eval_freq: 50000
+save_model_every: 100_000
 
 # training
 steps: 4_000_000
