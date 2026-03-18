@@ -34,6 +34,34 @@ class DiffusionPlanner:
 		self._compiled_eval_agent_id = None
 		self._compiled_mf_G_fn = None
 		self._compiled_mf_G_agent_id = None
+		self._warned_mf_compile_fallback = False
+		self._warned_mf_runtime_fallback = False
+
+	def _compile_mode_uses_cudagraphs(self, mode):
+		"""Whether a torch.compile mode is likely to enable CUDA graphs."""
+		return str(mode) == 'reduce-overhead'
+
+	def _get_safe_compile_mode(self, mode, *, needs_backward=False):
+		"""Downgrade compile modes that are fragile for backward/CUDA-graph planner code."""
+		if needs_backward and self._compile_mode_uses_cudagraphs(mode):
+			if not self._warned_mf_compile_fallback:
+				print(
+					"[DiffusionPlanner] diffusion_mf_forward_compile_mode=reduce-overhead is unsafe with autograd.grad; "
+					"falling back to compile mode 'default'."
+				)
+				self._warned_mf_compile_fallback = True
+			return 'default'
+		return mode
+
+	def _should_retry_eager(self, err):
+		"""Detect torch.compile/CUDA-graph planner failures that can be retried eagerly."""
+		msg = str(err)
+		patterns = (
+			"graph recording observed an input tensor deallocate during graph recording",
+			"cudagraph",
+			"CUDA graph",
+		)
+		return any(pattern in msg for pattern in patterns)
 
 	def _get_value_fn(self, agent, eval_mode):
 		"""Return value estimation function, optionally compiled for eval-only hot path."""
@@ -43,7 +71,8 @@ class DiffusionPlanner:
 		if self._compiled_eval_value_fn is None or self._compiled_eval_agent_id != agent_id:
 			def _value_fn(z, actions, task):
 				return agent._estimate_value(z, actions, task)
-			self._compiled_eval_value_fn = torch.compile(_value_fn, mode=self._eval_compile_mode)
+			compile_mode = self._get_safe_compile_mode(self._eval_compile_mode, needs_backward=False)
+			self._compiled_eval_value_fn = torch.compile(_value_fn, mode=compile_mode)
 			self._compiled_eval_agent_id = agent_id
 		return self._compiled_eval_value_fn
 
@@ -55,7 +84,8 @@ class DiffusionPlanner:
 		if self._compiled_mf_G_fn is None or self._compiled_mf_G_agent_id != agent_id:
 			def _mf_G_fn(z0, actions, task):
 				return self._estimate_G(agent, z0, actions, task)
-			self._compiled_mf_G_fn = torch.compile(_mf_G_fn, mode=self._mf_forward_compile_mode)
+			compile_mode = self._get_safe_compile_mode(self._mf_forward_compile_mode, needs_backward=True)
+			self._compiled_mf_G_fn = torch.compile(_mf_G_fn, mode=compile_mode)
 			self._compiled_mf_G_agent_id = agent_id
 		return self._compiled_mf_G_fn
 
@@ -192,20 +222,43 @@ class DiffusionPlanner:
 						a0_for_grad = a0_samples.detach().requires_grad_(True)
 					else:
 						a0_for_grad = a0_samples[mf_idx].detach().requires_grad_(True)
-					if mf_G_fn is None:
+					try:
+						if mf_G_fn is None:
+							G = self._estimate_G(agent, z0, a0_for_grad, task)
+						else:
+							G = mf_G_fn(z0, a0_for_grad, task)
+						logits_mf = (mf_eta * G) - (mf_eta * G).max()
+						weights_mf = torch.softmax(logits_mf, dim=0)
+						weighted_grad = torch.autograd.grad(
+							outputs=mf_eta * G,
+							inputs=a0_for_grad,
+							grad_outputs=weights_mf,
+							create_graph=False,
+							retain_graph=False,
+							only_inputs=True,
+						)[0]
+					except RuntimeError as err:
+						if mf_G_fn is None or not self._should_retry_eager(err):
+							raise
+						if not self._warned_mf_runtime_fallback:
+							print(
+								"[DiffusionPlanner] torch.compile failed in model-free diffusion score; retrying eagerly. "
+								"Disable diffusion_mf_forward_compile to silence this warning."
+							)
+							self._warned_mf_runtime_fallback = True
+						self._compiled_mf_G_fn = None
+						self._compiled_mf_G_agent_id = None
 						G = self._estimate_G(agent, z0, a0_for_grad, task)
-					else:
-						G = mf_G_fn(z0, a0_for_grad, task)
-					logits_mf = (mf_eta * G) - (mf_eta * G).max()
-					weights_mf = torch.softmax(logits_mf, dim=0)
-					weighted_grad = torch.autograd.grad(
-						outputs=mf_eta * G,
-						inputs=a0_for_grad,
-						grad_outputs=weights_mf,
-						create_graph=False,
-						retain_graph=False,
-						only_inputs=True,
-					)[0]
+						logits_mf = (mf_eta * G) - (mf_eta * G).max()
+						weights_mf = torch.softmax(logits_mf, dim=0)
+						weighted_grad = torch.autograd.grad(
+							outputs=mf_eta * G,
+							inputs=a0_for_grad,
+							grad_outputs=weights_mf,
+							create_graph=False,
+							retain_graph=False,
+							only_inputs=True,
+						)[0]
 				score_mf = weighted_grad.sum(dim=0) / (torch.sqrt(alpha_bar_tau) + 1e-8)
 				score = mf_beta * score_mf + (1.0 - mf_beta) * score_mb
 			else:
