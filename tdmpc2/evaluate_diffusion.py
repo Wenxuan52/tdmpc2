@@ -2,7 +2,6 @@ import os
 os.environ['MUJOCO_GL'] = os.getenv('MUJOCO_GL', 'egl')
 os.environ['LAZY_LEGACY_OP'] = '0'
 os.environ['TORCHDYNAMO_INLINE_INBUILT_NN_MODULES'] = '1'
-os.environ['TORCH_LOGS'] = '+recompiles'
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -41,7 +40,13 @@ def evaluate(cfg: dict):
 		f'Diffusion eval compile: {bool(getattr(cfg, "diffusion_eval_compile", False))}',
 		'blue', attrs=['bold']))
 	print(colored(
+		f'Diffusion eval compile cudagraphs: {bool(getattr(cfg, "diffusion_eval_compile_cudagraphs", False))}',
+		'blue', attrs=['bold']))
+	print(colored(
 		f'Diffusion MF forward compile: {bool(getattr(cfg, "diffusion_mf_forward_compile", False))}',
+		'blue', attrs=['bold']))
+	print(colored(
+		f'Diffusion MF forward compile cudagraphs: {bool(getattr(cfg, "diffusion_mf_forward_compile_cudagraphs", False))}',
 		'blue', attrs=['bold']))
 	if not cfg.multitask and ('mt80' in cfg.checkpoint or 'mt30' in cfg.checkpoint):
 		print(colored('Warning: single-task evaluation of multi-task models is not currently supported.', 'red', attrs=['bold']))
