@@ -1,3 +1,5 @@
+from contextlib import nullcontext
+
 import torch
 
 from common import math
@@ -26,14 +28,37 @@ class DiffusionPlanner:
 
 		self._eval_compile = bool(getattr(cfg, 'diffusion_eval_compile', True))
 		self._eval_compile_mode = str(getattr(cfg, 'diffusion_eval_compile_mode', 'reduce-overhead'))
+		self._eval_compile_cudagraphs = bool(getattr(cfg, 'diffusion_eval_compile_cudagraphs', False))
 		self._mf_forward_compile = bool(getattr(cfg, 'diffusion_mf_forward_compile', True))
 		self._mf_forward_compile_mode = str(getattr(cfg, 'diffusion_mf_forward_compile_mode', 'reduce-overhead'))
+		self._mf_forward_compile_cudagraphs = bool(getattr(cfg, 'diffusion_mf_forward_compile_cudagraphs', False))
 
 		self._schedule_cache = {}
 		self._compiled_eval_value_fn = None
 		self._compiled_eval_agent_id = None
 		self._compiled_mf_G_fn = None
 		self._compiled_mf_G_agent_id = None
+
+	def _compile_fn(self, fn, mode, cudagraphs):
+		"""Compile a function, defaulting to cudagraph-free mode for eval stability."""
+		compile_kwargs = {}
+		if cudagraphs:
+			compile_kwargs['mode'] = mode
+		else:
+			compile_kwargs['options'] = {'triton.cudagraphs': False}
+		try:
+			return torch.compile(fn, **compile_kwargs)
+		except TypeError:
+			compile_kwargs.pop('options', None)
+			if not cudagraphs:
+				compile_kwargs['mode'] = 'default'
+			return torch.compile(fn, **compile_kwargs)
+		except RuntimeError as err:
+			if 'Either mode or options can be specified' not in str(err):
+				raise
+			if cudagraphs:
+				raise
+			return torch.compile(fn, options={'triton.cudagraphs': False})
 
 	def _get_value_fn(self, agent, eval_mode):
 		"""Return value estimation function, optionally compiled for eval-only hot path."""
@@ -189,7 +214,8 @@ class DiffusionPlanner:
 			compute_score_mf = (mf_beta > 0.0) and (iter_idx % compute_score_mf_every == 0)
 			if compute_score_mf:
 				mf_idx = torch.topk(values, num_samples_mf, dim=0).indices if num_samples_mf < num_samples else None
-				with torch.enable_grad():
+				grad_context = nullcontext() if mf_G_fn is not None else torch.enable_grad()
+				with grad_context:
 					if mf_idx is None:
 						a0_for_grad = a0_samples.detach().requires_grad_(True)
 					else:
