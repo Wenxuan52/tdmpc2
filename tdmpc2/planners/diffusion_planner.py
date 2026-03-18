@@ -41,8 +41,10 @@ class DiffusionPlanner:
 
 	def _compile_fn(self, fn, mode, cudagraphs):
 		"""Compile a function, defaulting to cudagraph-free mode for eval stability."""
-		compile_kwargs = dict(mode=mode)
-		if not cudagraphs:
+		compile_kwargs = {}
+		if cudagraphs:
+			compile_kwargs['mode'] = mode
+		else:
 			compile_kwargs['options'] = {'triton.cudagraphs': False}
 		try:
 			return torch.compile(fn, **compile_kwargs)
@@ -51,6 +53,12 @@ class DiffusionPlanner:
 			if not cudagraphs:
 				compile_kwargs['mode'] = 'default'
 			return torch.compile(fn, **compile_kwargs)
+		except RuntimeError as err:
+			if 'Either mode or options can be specified' not in str(err):
+				raise
+			if cudagraphs:
+				raise
+			return torch.compile(fn, options={'triton.cudagraphs': False})
 
 	def _get_value_fn(self, agent, eval_mode):
 		"""Return value estimation function, optionally compiled for eval-only hot path."""
