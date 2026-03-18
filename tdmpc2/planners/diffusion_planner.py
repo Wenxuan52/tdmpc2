@@ -43,7 +43,8 @@ class DiffusionPlanner:
 		if self._compiled_eval_value_fn is None or self._compiled_eval_agent_id != agent_id:
 			def _value_fn(z, actions, task):
 				return agent._estimate_value(z, actions, task)
-			self._compiled_eval_value_fn = torch.compile(_value_fn, mode=self._eval_compile_mode)
+			with torch.no_grad():
+				self._compiled_eval_value_fn = torch.compile(_value_fn, mode=self._eval_compile_mode)
 			self._compiled_eval_agent_id = agent_id
 		return self._compiled_eval_value_fn
 
@@ -55,7 +56,8 @@ class DiffusionPlanner:
 		if self._compiled_mf_G_fn is None or self._compiled_mf_G_agent_id != agent_id:
 			def _mf_G_fn(z0, actions, task):
 				return self._estimate_G(agent, z0, actions, task)
-			self._compiled_mf_G_fn = torch.compile(_mf_G_fn, mode=self._mf_forward_compile_mode)
+			with torch.enable_grad():
+				self._compiled_mf_G_fn = torch.compile(_mf_G_fn, mode=self._mf_forward_compile_mode)
 			self._compiled_mf_G_agent_id = agent_id
 		return self._compiled_mf_G_fn
 
