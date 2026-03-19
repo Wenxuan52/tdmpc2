@@ -59,37 +59,11 @@ def _task_score(task_name, episode_reward, episode_success, multitask):
 	return episode_success * 100 if task_name.startswith('mw-') else episode_reward / 10
 
 
-def _evaluate_worker(payload):
-	visible_device = _cuda_visible_device(payload['device'])
-	os.environ['CUDA_VISIBLE_DEVICES'] = visible_device
-	os.environ['MUJOCO_GL'] = os.getenv('MUJOCO_GL', 'egl')
-
-	import torch
-	from envs import make_env
-	from tdmpc2 import TDMPC2
-
-	torch.backends.cudnn.benchmark = True
-	torch.set_float32_matmul_precision('high')
-	torch.cuda.set_device(0)
-
-	cfg = ConfigNamespace(**payload['cfg'])
-	if payload.get('disable_cudagraphs_for_compile', False) and cfg.get('diffusion_eval_compile', False):
-		# `reduce-overhead` compile can route through Inductor CUDA graphs, which is unstable here
-		# under multiprocessing + multi-GPU evaluation. Keep torch.compile enabled, but disable
-		# CUDA-graph capture for the worker to avoid replay/deallocation invariant failures.
-		if hasattr(torch, '_inductor') and hasattr(torch._inductor, 'config') and hasattr(torch._inductor.config, 'triton'):
-			torch._inductor.config.triton.cudagraphs = False
-		print(
-			f'[device cuda:{visible_device}] disabling Inductor cudagraphs for compiled diffusion eval '
-			f'(compile mode: {cfg.get("diffusion_eval_compile_mode", "reduce-overhead")})',
-			flush=True,
-		)
+def _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2, use_cudagraph_mark):
 	set_seed(payload['seed'])
 	env = make_env(cfg)
 	agent = TDMPC2(cfg)
 	agent.load(payload['checkpoint'])
-
-	use_cudagraph_mark = not payload.get('disable_cudagraphs_for_compile', False)
 
 	results = []
 	for task_idx in payload['task_indices']:
@@ -124,6 +98,50 @@ def _evaluate_worker(payload):
 	return results
 
 
+def _evaluate_worker(payload):
+	visible_device = _cuda_visible_device(payload['device'])
+	os.environ['CUDA_VISIBLE_DEVICES'] = visible_device
+	os.environ['MUJOCO_GL'] = os.getenv('MUJOCO_GL', 'egl')
+
+	import torch
+	from envs import make_env
+	from tdmpc2 import TDMPC2
+
+	torch.backends.cudnn.benchmark = True
+	torch.set_float32_matmul_precision('high')
+	torch.cuda.set_device(0)
+
+	cfg = ConfigNamespace(**payload['cfg'])
+	use_cudagraph_mark = True
+	if payload.get('disable_cudagraphs_for_compile', False) and cfg.get('diffusion_eval_compile', False):
+		# `reduce-overhead` compile can route through Inductor CUDA graphs, which is unstable here
+		# under multiprocessing + multi-GPU evaluation. Keep torch.compile enabled, but disable
+		# CUDA-graph capture for the worker to avoid replay/deallocation invariant failures.
+		cfg.diffusion_eval_compile_mode = 'max-autotune-no-cudagraphs'
+		if hasattr(torch, '_inductor') and hasattr(torch._inductor, 'config') and hasattr(torch._inductor.config, 'triton'):
+			torch._inductor.config.triton.cudagraphs = False
+		print(
+			f'[device cuda:{visible_device}] using diffusion_eval_compile_mode='
+			f'{cfg.diffusion_eval_compile_mode} for multi-process compiled eval',
+			flush=True,
+		)
+		use_cudagraph_mark = False
+
+	try:
+		return _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2, use_cudagraph_mark)
+	except RuntimeError as exc:
+		if cfg.get('diffusion_eval_compile', False) and 'graph recording observed an input tensor deallocate' in str(exc):
+			print(
+				f'[device cuda:{visible_device}] compiled diffusion eval still hit a CUDA-graph runtime error; '
+				f'falling back to non-compiled diffusion eval for this worker.',
+				flush=True,
+			)
+			cfg.diffusion_eval_compile = False
+			cfg.diffusion_eval_compile_mode = 'default'
+			return _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2, False)
+		raise
+
+
 @hydra.main(config_name='config', config_path='.')
 def evaluate_diffusion(cfg: dict):
 	"""Evaluate a diffusion-planner TD-MPC2 checkpoint, optionally in parallel across GPUs."""
@@ -148,8 +166,9 @@ def evaluate_diffusion(cfg: dict):
 	disable_cudagraphs_for_compile = len(eval_devices) > 1 and cfg_dict.get('diffusion_eval_compile', False)
 	if disable_cudagraphs_for_compile:
 		print(colored(
-			'Multi-process compiled diffusion eval detected: disabling Inductor cudagraphs per worker '
-			'to avoid CUDA-graph replay/deallocation errors while keeping torch.compile enabled.',
+			'Multi-process compiled diffusion eval detected: workers will use '
+			'`max-autotune-no-cudagraphs`, and if PyTorch still fails they will '
+			'fall back to non-compiled diffusion eval for that worker only.',
 			'yellow', attrs=['bold']))
 
 	if cfg_dict.get('save_video', False) and len(eval_devices) > 1:
