@@ -73,10 +73,23 @@ def _evaluate_worker(payload):
 	torch.cuda.set_device(0)
 
 	cfg = ConfigNamespace(**payload['cfg'])
+	if payload.get('disable_cudagraphs_for_compile', False) and cfg.get('diffusion_eval_compile', False):
+		# `reduce-overhead` compile can route through Inductor CUDA graphs, which is unstable here
+		# under multiprocessing + multi-GPU evaluation. Keep torch.compile enabled, but disable
+		# CUDA-graph capture for the worker to avoid replay/deallocation invariant failures.
+		if hasattr(torch, '_inductor') and hasattr(torch._inductor, 'config') and hasattr(torch._inductor.config, 'triton'):
+			torch._inductor.config.triton.cudagraphs = False
+		print(
+			f'[device cuda:{visible_device}] disabling Inductor cudagraphs for compiled diffusion eval '
+			f'(compile mode: {cfg.get("diffusion_eval_compile_mode", "reduce-overhead")})',
+			flush=True,
+		)
 	set_seed(payload['seed'])
 	env = make_env(cfg)
 	agent = TDMPC2(cfg)
 	agent.load(payload['checkpoint'])
+
+	use_cudagraph_mark = not payload.get('disable_cudagraphs_for_compile', False)
 
 	results = []
 	for task_idx in payload['task_indices']:
@@ -89,7 +102,8 @@ def _evaluate_worker(payload):
 				obs = env.reset()
 			done, ep_reward, t = False, 0.0, 0
 			while not done:
-				torch.compiler.cudagraph_mark_step_begin()
+				if use_cudagraph_mark:
+					torch.compiler.cudagraph_mark_step_begin()
 				action = agent.act(obs, t0=t == 0, eval_mode=True, task=task_idx if cfg.multitask else None)
 				obs, reward, done, info = env.step(action)
 				ep_reward += reward
@@ -131,6 +145,13 @@ def evaluate_diffusion(cfg: dict):
 	print(colored(f'Diffusion MF forward compile: {cfg_dict.get("diffusion_mf_forward_compile", False)}', 'blue', attrs=['bold']))
 	print(colored(f'Eval devices: {eval_devices}', 'blue', attrs=['bold']))
 
+	disable_cudagraphs_for_compile = len(eval_devices) > 1 and cfg_dict.get('diffusion_eval_compile', False)
+	if disable_cudagraphs_for_compile:
+		print(colored(
+			'Multi-process compiled diffusion eval detected: disabling Inductor cudagraphs per worker '
+			'to avoid CUDA-graph replay/deallocation errors while keeping torch.compile enabled.',
+			'yellow', attrs=['bold']))
+
 	if cfg_dict.get('save_video', False) and len(eval_devices) > 1:
 		raise ValueError('save_video=true is only supported with a single eval device in evaluate_diffusion.py.')
 
@@ -153,6 +174,7 @@ def evaluate_diffusion(cfg: dict):
 			'task_indices': shard,
 			'eval_episodes': cfg_dict['eval_episodes'],
 			'seed': cfg_dict['seed'] + worker_idx,
+			'disable_cudagraphs_for_compile': disable_cudagraphs_for_compile,
 		}
 		for worker_idx, (device, shard) in enumerate(zip(eval_devices, shards)) if shard
 	]
