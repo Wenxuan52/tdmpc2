@@ -26,6 +26,7 @@ class TDMPC2(torch.nn.Module):
 			{'params': self.model._dynamics.parameters()},
 			{'params': self.model._reward.parameters()},
 			{'params': self.model._termination.parameters() if self.cfg.episodic else []},
+			{'params': self.model._G.parameters()},
 			{'params': self.model._Qs.parameters()},
 			{'params': self.model._task_emb.parameters() if self.cfg.multitask else []
 			 }
@@ -266,11 +267,30 @@ class TDMPC2(torch.nn.Module):
 		discount = self.discount[task].unsqueeze(-1) if self.cfg.multitask else self.discount
 		return reward + discount * (1-terminated) * self.model.Q(next_z, action, task, return_type='min', target=True)
 
+	@torch.no_grad()
+	def _g_target(self, obs, reward, terminated, task):
+		"""
+		Compute a replay-data target for G from real rewards and a terminal bootstrap Q-value.
+		"""
+		final_z = self.model.encode(obs[-1], task)
+		_, info = self.model.pi(final_z, task)
+		bootstrap_q = self.model.Q(final_z, info["mean"], task, return_type='avg', target=True)
+		discount = self.discount[task].unsqueeze(-1) if self.cfg.multitask else self.discount
+		target = torch.zeros_like(bootstrap_q)
+		discount_t = torch.ones_like(bootstrap_q)
+		alive = torch.ones_like(bootstrap_q)
+		for rew_t, term_t in zip(reward.unbind(0), terminated.unbind(0)):
+			target = target + discount_t * alive * rew_t
+			alive = alive * (1 - term_t)
+			discount_t = discount_t * discount
+		return target + discount_t * alive * bootstrap_q
+
 	def _update(self, obs, action, reward, terminated, task=None):
 		# Compute targets
 		with torch.no_grad():
 			next_z = self.model.encode(obs[1:], task)
 			td_targets = self._td_target(next_z, reward, terminated, task)
+			g_targets = self._g_target(obs, reward, terminated, task)
 
 		# Prepare for update
 		self.model.train()
@@ -287,6 +307,7 @@ class TDMPC2(torch.nn.Module):
 
 		# Predictions
 		_zs = zs[:-1]
+		g_preds = self.model.G(zs[0], action.permute(1, 0, 2), task)
 		qs = self.model.Q(_zs, action, task, return_type='all')
 		reward_preds = self.model.reward(_zs, action, task)
 		if self.cfg.episodic:
@@ -294,6 +315,7 @@ class TDMPC2(torch.nn.Module):
 
 		# Compute losses
 		reward_loss, value_loss = 0, 0
+		g_loss = F.smooth_l1_loss(g_preds, g_targets)
 		for t, (rew_pred_unbind, rew_unbind, td_targets_unbind, qs_unbind) in enumerate(zip(reward_preds.unbind(0), reward.unbind(0), td_targets.unbind(0), qs.unbind(1))):
 			reward_loss = reward_loss + math.soft_ce(rew_pred_unbind, rew_unbind, self.cfg).mean() * self.cfg.rho**t
 			for _, qs_unbind_unbind in enumerate(qs_unbind.unbind(0)):
@@ -310,6 +332,7 @@ class TDMPC2(torch.nn.Module):
 			self.cfg.consistency_coef * consistency_loss +
 			self.cfg.reward_coef * reward_loss +
 			self.cfg.termination_coef * termination_loss +
+			getattr(self.cfg, 'g_coef', 1.0) * g_loss +
 			self.cfg.value_coef * value_loss
 		)
 
@@ -331,6 +354,7 @@ class TDMPC2(torch.nn.Module):
 			"consistency_loss": consistency_loss,
 			"reward_loss": reward_loss,
 			"value_loss": value_loss,
+			"g_loss": g_loss,
 			"termination_loss": termination_loss,
 			"total_loss": total_loss,
 			"grad_norm": grad_norm,

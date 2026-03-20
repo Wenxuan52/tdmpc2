@@ -160,7 +160,6 @@ def evaluate_diffusion(cfg: dict):
 	print(colored(f'Checkpoint: {cfg_dict["checkpoint"]}', 'blue', attrs=['bold']))
 	print(colored(f'Planner type: {cfg_dict["planner_type"]}', 'blue', attrs=['bold']))
 	print(colored(f'Diffusion eval compile: {cfg_dict.get("diffusion_eval_compile", False)}', 'blue', attrs=['bold']))
-	print(colored(f'Diffusion MF forward compile: {cfg_dict.get("diffusion_mf_forward_compile", False)}', 'blue', attrs=['bold']))
 	print(colored(f'Eval devices: {eval_devices}', 'blue', attrs=['bold']))
 
 	disable_cudagraphs_for_compile = len(eval_devices) > 1 and cfg_dict.get('diffusion_eval_compile', False)
