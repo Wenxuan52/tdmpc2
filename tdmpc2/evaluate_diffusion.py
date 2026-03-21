@@ -59,7 +59,7 @@ def _task_score(task_name, episode_reward, episode_success, multitask):
 	return episode_success * 100 if task_name.startswith('mw-') else episode_reward / 10
 
 
-def _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2, use_cudagraph_mark):
+def _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2):
 	set_seed(payload['seed'])
 	env = make_env(cfg)
 	agent = TDMPC2(cfg)
@@ -76,8 +76,6 @@ def _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2, use_
 				obs = env.reset()
 			done, ep_reward, t = False, 0.0, 0
 			while not done:
-				if use_cudagraph_mark:
-					torch.compiler.cudagraph_mark_step_begin()
 				action = agent.act(obs, t0=t == 0, eval_mode=True, task=task_idx if cfg.multitask else None)
 				obs, reward, done, info = env.step(action)
 				ep_reward += reward
@@ -112,7 +110,6 @@ def _evaluate_worker(payload):
 	torch.cuda.set_device(0)
 
 	cfg = ConfigNamespace(**payload['cfg'])
-	use_cudagraph_mark = True
 	if payload.get('disable_cudagraphs_for_compile', False) and cfg.get('diffusion_eval_compile', False):
 		# `reduce-overhead` compile can route through Inductor CUDA graphs, which is unstable here
 		# under multiprocessing + multi-GPU evaluation. Keep torch.compile enabled, but disable
@@ -125,10 +122,9 @@ def _evaluate_worker(payload):
 			f'{cfg.diffusion_eval_compile_mode} for multi-process compiled eval',
 			flush=True,
 		)
-		use_cudagraph_mark = False
 
 	try:
-		return _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2, use_cudagraph_mark)
+		return _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2)
 	except RuntimeError as exc:
 		if cfg.get('diffusion_eval_compile', False) and 'graph recording observed an input tensor deallocate' in str(exc):
 			print(
@@ -138,7 +134,7 @@ def _evaluate_worker(payload):
 			)
 			cfg.diffusion_eval_compile = False
 			cfg.diffusion_eval_compile_mode = 'default'
-			return _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2, False)
+			return _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2)
 		raise
 
 
@@ -160,7 +156,6 @@ def evaluate_diffusion(cfg: dict):
 	print(colored(f'Checkpoint: {cfg_dict["checkpoint"]}', 'blue', attrs=['bold']))
 	print(colored(f'Planner type: {cfg_dict["planner_type"]}', 'blue', attrs=['bold']))
 	print(colored(f'Diffusion eval compile: {cfg_dict.get("diffusion_eval_compile", False)}', 'blue', attrs=['bold']))
-	print(colored(f'Diffusion MF forward compile: {cfg_dict.get("diffusion_mf_forward_compile", False)}', 'blue', attrs=['bold']))
 	print(colored(f'Eval devices: {eval_devices}', 'blue', attrs=['bold']))
 
 	disable_cudagraphs_for_compile = len(eval_devices) > 1 and cfg_dict.get('diffusion_eval_compile', False)
