@@ -92,6 +92,7 @@ save_csv: true
 
 # misc
 compile: false
+compile_mode: max-autotune-no-cudagraphs
 save_video: false
 save_agent: true
 seed: 1

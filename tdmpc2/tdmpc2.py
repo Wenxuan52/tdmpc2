@@ -35,6 +35,7 @@ class TDMPC2(torch.nn.Module):
 		self.model.eval()
 		self.scale = RunningScale(cfg)
 		self.cfg.iterations += 2*int(cfg.action_dim >= 20) # Heuristic for large action spaces
+		self._compile_mode = str(getattr(cfg, 'compile_mode', 'max-autotune-no-cudagraphs'))
 		self.discount = torch.tensor(
 			[self._get_discount(ep_len) for ep_len in cfg.episode_lengths], device='cuda:0'
 		) if self.cfg.multitask else self._get_discount(cfg.episode_length)
@@ -42,9 +43,10 @@ class TDMPC2(torch.nn.Module):
 		print('Discount factor:', self.discount)
 		self._prev_mean = torch.nn.Buffer(torch.zeros(self.cfg.horizon, self.cfg.action_dim, device=self.device))
 		self._diffusion_planner = DiffusionPlanner(cfg)
+		self._compiled_update_core = self._update_core
 		if cfg.compile:
-			print('Compiling update function with torch.compile...')
-			self._update = torch.compile(self._update, mode="reduce-overhead")
+			print(f'Compiling update core with torch.compile (mode={self._compile_mode})...')
+			self._compiled_update_core = torch.compile(self._update_core, mode=self._compile_mode)
 
 	@property
 	def plan(self):
@@ -55,7 +57,7 @@ class TDMPC2(torch.nn.Module):
 		if planner_type == 'diffusion':
 			plan = self._diffusion_plan
 		elif self.cfg.compile:
-			plan = torch.compile(self._plan, mode="reduce-overhead")
+			plan = torch.compile(self._plan, mode=self._compile_mode)
 		else:
 			plan = self._plan
 		self._plan_val = plan
@@ -265,7 +267,9 @@ class TDMPC2(torch.nn.Module):
 		"""
 		action, _ = self.model.pi(next_z, task)
 		discount = self.discount[task].unsqueeze(-1) if self.cfg.multitask else self.discount
-		return reward + discount * (1-terminated) * self.model.Q(next_z, action, task, return_type='min', target=True)
+		target_qs = self.model.Q(next_z, action, task, return_type='all', target=True)
+		target_q = math.two_hot_inv(target_qs[:2], self.cfg).min(0).values
+		return reward + discount * (1-terminated) * target_q
 
 	@torch.no_grad()
 	def _g_target(self, obs, reward, terminated, task):
@@ -274,7 +278,8 @@ class TDMPC2(torch.nn.Module):
 		"""
 		final_z = self.model.encode(obs[-1], task)
 		_, info = self.model.pi(final_z, task)
-		bootstrap_q = self.model.Q(final_z, info["mean"], task, return_type='avg', target=True)
+		bootstrap_qs = self.model.Q(final_z, info["mean"], task, return_type='all', target=True)
+		bootstrap_q = math.two_hot_inv(bootstrap_qs[:2], self.cfg).sum(0) / 2
 		discount = self.discount[task].unsqueeze(-1) if self.cfg.multitask else self.discount
 		target = torch.zeros_like(bootstrap_q)
 		discount_t = torch.ones_like(bootstrap_q)
@@ -285,17 +290,12 @@ class TDMPC2(torch.nn.Module):
 			discount_t = discount_t * discount
 		return target + discount_t * alive * bootstrap_q
 
-	def _update(self, obs, action, reward, terminated, task=None):
-		# Compute targets
+	def _update_core(self, obs, action, reward, terminated, task=None):
 		with torch.no_grad():
 			next_z = self.model.encode(obs[1:], task)
 			td_targets = self._td_target(next_z, reward, terminated, task)
 			g_targets = self._g_target(obs, reward, terminated, task)
 
-		# Prepare for update
-		self.model.train()
-
-		# Latent rollout
 		zs = torch.empty(self.cfg.horizon+1, self.cfg.batch_size, self.cfg.latent_dim, device=self.device)
 		z = self.model.encode(obs[0], task)
 		zs[0] = z
@@ -305,28 +305,22 @@ class TDMPC2(torch.nn.Module):
 			consistency_loss = consistency_loss + F.mse_loss(z, _next_z) * self.cfg.rho**t
 			zs[t+1] = z
 
-		# Predictions
 		_zs = zs[:-1]
 		g_preds = self.model.G(zs[0], action.permute(1, 0, 2), task)
 		qs = self.model.Q(_zs, action, task, return_type='all')
 		reward_preds = self.model.reward(_zs, action, task)
-		if self.cfg.episodic:
-			termination_pred = self.model.termination(zs[1:], task, unnormalized=True)
+		termination_pred = self.model.termination(zs[1:], task, unnormalized=True) if self.cfg.episodic else None
 
-		# Compute losses
 		reward_loss, value_loss = 0, 0
 		g_loss = F.smooth_l1_loss(g_preds, g_targets)
 		for t, (rew_pred_unbind, rew_unbind, td_targets_unbind, qs_unbind) in enumerate(zip(reward_preds.unbind(0), reward.unbind(0), td_targets.unbind(0), qs.unbind(1))):
 			reward_loss = reward_loss + math.soft_ce(rew_pred_unbind, rew_unbind, self.cfg).mean() * self.cfg.rho**t
-			for _, qs_unbind_unbind in enumerate(qs_unbind.unbind(0)):
+			for qs_unbind_unbind in qs_unbind.unbind(0):
 				value_loss = value_loss + math.soft_ce(qs_unbind_unbind, td_targets_unbind, self.cfg).mean() * self.cfg.rho**t
 
 		consistency_loss = consistency_loss / self.cfg.horizon
 		reward_loss = reward_loss / self.cfg.horizon
-		if self.cfg.episodic:
-			termination_loss = F.binary_cross_entropy_with_logits(termination_pred, terminated)
-		else:
-			termination_loss = 0.
+		termination_loss = F.binary_cross_entropy_with_logits(termination_pred, terminated) if self.cfg.episodic else reward_loss.new_zeros(())
 		value_loss = value_loss / (self.cfg.horizon * self.cfg.num_q)
 		total_loss = (
 			self.cfg.consistency_coef * consistency_loss +
@@ -334,6 +328,13 @@ class TDMPC2(torch.nn.Module):
 			self.cfg.termination_coef * termination_loss +
 			getattr(self.cfg, 'g_coef', 1.0) * g_loss +
 			self.cfg.value_coef * value_loss
+		)
+		return zs.detach(), consistency_loss, reward_loss, value_loss, g_loss, termination_loss, total_loss, termination_pred
+
+	def _update(self, obs, action, reward, terminated, task=None):
+		self.model.train()
+		zs, consistency_loss, reward_loss, value_loss, g_loss, termination_loss, total_loss, termination_pred = self._compiled_update_core(
+			obs, action, reward, terminated, task,
 		)
 
 		# Update model
@@ -350,7 +351,7 @@ class TDMPC2(torch.nn.Module):
 
 		# Return training statistics
 		self.model.eval()
-		info = TensorDict({
+		info_dict = {
 			"consistency_loss": consistency_loss,
 			"reward_loss": reward_loss,
 			"value_loss": value_loss,
@@ -358,7 +359,8 @@ class TDMPC2(torch.nn.Module):
 			"termination_loss": termination_loss,
 			"total_loss": total_loss,
 			"grad_norm": grad_norm,
-		})
+		}
+		info = TensorDict(info_dict)
 		if self.cfg.episodic:
 			info.update(math.termination_statistics(torch.sigmoid(termination_pred[-1]), terminated[-1]))
 		info.update(pi_info)
@@ -378,5 +380,4 @@ class TDMPC2(torch.nn.Module):
 		kwargs = {}
 		if task is not None:
 			kwargs["task"] = task
-		torch.compiler.cudagraph_mark_step_begin()
 		return self._update(obs, action, reward, terminated, **kwargs)
