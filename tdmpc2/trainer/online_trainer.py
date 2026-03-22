@@ -1,4 +1,6 @@
+import csv
 from time import time
+from pathlib import Path
 
 import numpy as np
 import torch
@@ -16,6 +18,21 @@ class OnlineTrainer(Trainer):
 		self._ep_idx = 0
 		self._start_time = time()
 		self._replay_saver = ReplayBufferSaver(self.cfg)
+		self._reward_csv_fp = None
+		if bool(getattr(self.cfg, 'save_reward_csv', False)):
+			reward_csv_dir = Path(str(getattr(self.cfg, 'reward_csv_dir', '')))
+			reward_csv_dir.mkdir(parents=True, exist_ok=True)
+			self._reward_csv_fp = reward_csv_dir / f'{self.cfg.task}_{self.cfg.seed}.csv'
+			with open(self._reward_csv_fp, 'w', newline='') as f:
+				writer = csv.writer(f)
+				writer.writerow(['step', 'episode_reward'])
+
+	def _append_reward_csv(self, step, reward):
+		if self._reward_csv_fp is None:
+			return
+		with open(self._reward_csv_fp, 'a', newline='') as f:
+			writer = csv.writer(f)
+			writer.writerow([int(step), float(reward)])
 
 	def common_metrics(self):
 		"""Return a dictionary of current metrics."""
@@ -105,6 +122,7 @@ class OnlineTrainer(Trainer):
 						episode_length=len(self._tds),
 						episode_terminated=info['terminated'])
 					train_metrics.update(self.common_metrics())
+					self._append_reward_csv(train_metrics['step'], train_metrics['episode_reward'])
 					self.logger.log(train_metrics, 'train')
 					self._replay_saver.add_episode(episode_td)
 					self._ep_idx = self.buffer.add(episode_td)

@@ -37,6 +37,8 @@ replay_save_dir: ''
 replay_flush_every_episodes: 1000
 replay_include_terminated: false
 replay_task_id: -1
+save_reward_csv: false
+reward_csv_dir: ''
 
 # planning
 mpc: true

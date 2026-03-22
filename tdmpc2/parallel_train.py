@@ -46,7 +46,7 @@ def _steps_for_task(cfg, task: str) -> int:
 	return int(cfg.get('default_steps', cfg.get('steps', 0)) or 0)
 
 
-def _build_seed_command(cfg, task: str, seed: int, temp_replay_root: Path, steps: int) -> list[str]:
+def _build_seed_command(cfg, task: str, seed: int, temp_replay_root: Path, reward_csv_root: Path, steps: int) -> list[str]:
 	train_entry = str(cfg.get('train_entry', 'tdmpc2/train.py'))
 	exp_name = str(cfg.get('exp_name', 'parallel-online-diffusion'))
 	cmd = [
@@ -72,25 +72,30 @@ def _build_seed_command(cfg, task: str, seed: int, temp_replay_root: Path, steps
 		f'replay_save_dir={temp_replay_root.as_posix()}',
 		f'replay_flush_every_episodes={int(cfg.get("replay_flush_every_episodes", 1000))}',
 		f'replay_include_terminated={str(bool(cfg.get("replay_include_terminated", True))).lower()}',
+		f'save_reward_csv={str(bool(cfg.get("save_reward_csv", True))).lower()}',
+		f'reward_csv_dir={reward_csv_root.as_posix()}',
 	]
 	for override in cfg.get('common_overrides', []) or []:
 		cmd.append(str(override))
 	return cmd
 
 
-def _run_single_seed(cfg, gpu_id: int, task: str, seed: int, temp_replay_root: Path, log_root: Path):
+def _launch_seed_processes(cfg, gpu_id: int, task: str, temp_replay_root: Path, reward_csv_root: Path, log_root: Path):
 	repo_root = _repo_root()
 	steps = _steps_for_task(cfg, task)
 	if steps <= 0:
 		raise ValueError(f'Invalid step count {steps} for task "{task}".')
-	cmd = _build_seed_command(cfg, task, seed, temp_replay_root, steps)
+	processes = []
 	seed_log_dir = log_root / task
 	seed_log_dir.mkdir(parents=True, exist_ok=True)
-	log_fp = seed_log_dir / f'seed_{seed}.log'
-	env = os.environ.copy()
-	env['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
-	print(f'[gpu {gpu_id}] launching task={task} seed={seed} steps={steps}: {" ".join(cmd)}')
-	with open(log_fp, 'w') as log_handle:
+	for seed in cfg.seeds:
+		seed = int(seed)
+		cmd = _build_seed_command(cfg, task, seed, temp_replay_root, reward_csv_root, steps)
+		log_fp = seed_log_dir / f'seed_{seed}.log'
+		env = os.environ.copy()
+		env['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
+		print(f'[gpu {gpu_id}] launching task={task} seed={seed} steps={steps}: {" ".join(cmd)}')
+		log_handle = open(log_fp, 'w')
 		proc = subprocess.Popen(
 			cmd,
 			cwd=repo_root,
@@ -98,11 +103,20 @@ def _run_single_seed(cfg, gpu_id: int, task: str, seed: int, temp_replay_root: P
 			stdout=log_handle,
 			stderr=subprocess.STDOUT,
 		)
+		processes.append((seed, proc, log_fp, log_handle))
+	return processes
+
+
+def _wait_seed_processes(processes, gpu_id: int, task: str):
+	failed = []
+	for seed, proc, log_fp, log_handle in processes:
 		return_code = proc.wait()
-	if return_code != 0:
-		return seed, return_code, log_fp
-	print(f'[gpu {gpu_id}] task={task} seed={seed} finished successfully. log={log_fp}')
-	return None
+		log_handle.close()
+		if return_code != 0:
+			failed.append((seed, return_code, log_fp))
+		else:
+			print(f'[gpu {gpu_id}] task={task} seed={seed} finished successfully. log={log_fp}')
+	return failed
 
 
 def _merge_task_replay(cfg, task: str, temp_replay_root: Path, final_replay_root: Path):
@@ -120,7 +134,7 @@ def _merge_task_replay(cfg, task: str, temp_replay_root: Path, final_replay_root
 	)
 
 
-def _gpu_worker(cfg, gpu_id: int, tasks_queue: queue.Queue, final_replay_root: Path, temp_replay_root: Path, log_root: Path, failures: list):
+def _gpu_worker(cfg, gpu_id: int, tasks_queue: queue.Queue, final_replay_root: Path, temp_replay_root: Path, reward_csv_root: Path, log_root: Path, failures: list):
 	while True:
 		try:
 			task = tasks_queue.get_nowait()
@@ -129,12 +143,8 @@ def _gpu_worker(cfg, gpu_id: int, tasks_queue: queue.Queue, final_replay_root: P
 		try:
 			start = time.time()
 			shutil.rmtree(temp_replay_root / task, ignore_errors=True)
-			failed = []
-			for seed in cfg.seeds:
-				maybe_failed = _run_single_seed(cfg, gpu_id, task, int(seed), temp_replay_root, log_root)
-				if maybe_failed is not None:
-					failed.append(maybe_failed)
-					break
+			processes = _launch_seed_processes(cfg, gpu_id, task, temp_replay_root, reward_csv_root, log_root)
+			failed = _wait_seed_processes(processes, gpu_id, task)
 			if failed:
 				failures.append((gpu_id, task, failed))
 				print(f'[gpu {gpu_id}] task={task} failed: {failed}')
@@ -172,9 +182,11 @@ def main():
 	repo_root = _repo_root()
 	final_replay_root = (repo_root / Path(str(cfg.get('replay_save_dir', './replays')))).resolve()
 	temp_replay_root = final_replay_root / '_tmp'
+	reward_csv_root = final_replay_root / '_csv'
 	log_root = final_replay_root / '_logs'
 	final_replay_root.mkdir(parents=True, exist_ok=True)
 	temp_replay_root.mkdir(parents=True, exist_ok=True)
+	reward_csv_root.mkdir(parents=True, exist_ok=True)
 	log_root.mkdir(parents=True, exist_ok=True)
 
 	print(f'Using GPUs: {gpu_ids}')
@@ -182,6 +194,7 @@ def main():
 	print(f'Per-task seeds: {[int(seed) for seed in cfg.seeds]}')
 	print(f'Final replay dir: {final_replay_root}')
 	print(f'Temporary replay dir: {temp_replay_root}')
+	print(f'Reward CSV dir: {reward_csv_root}')
 
 	tasks_queue = queue.Queue()
 	for task in tasks:
@@ -192,7 +205,7 @@ def main():
 	for gpu_id in gpu_ids:
 		thread = threading.Thread(
 			target=_gpu_worker,
-			args=(cfg, gpu_id, tasks_queue, final_replay_root, temp_replay_root, log_root, failures),
+			args=(cfg, gpu_id, tasks_queue, final_replay_root, temp_replay_root, reward_csv_root, log_root, failures),
 			daemon=False,
 		)
 		thread.start()
