@@ -9,7 +9,7 @@ default_steps: 4000000
 planner_type: diffusion
 obs: state
 compile: true
-compile_mode: max-autotune-no-cudagraphs
+compile_mode: reduce-overhead
 diffusion_eval_compile: true
 diffusion_eval_compile_mode: reduce-overhead
 eval_freq: 0
