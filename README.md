@@ -133,6 +133,19 @@ python evaluate.py task=dog-run checkpoint=/path/to/model.pt planner_type=diffus
 
 For a fast smoke test, reduce both `diffusion_steps` and `diffusion_num_samples` (e.g., 4 and 64).
 
+### Parallel single-task online training with replay export
+
+For running many single-task online jobs in parallel across GPUs, configure `tdmpc2/parallel_config.yaml` and launch:
+
+```
+python tdmpc2/parallel_train.py --config tdmpc2/parallel_config.yaml
+```
+
+The launcher assigns one task per GPU at a time, runs the configured seeds for that task concurrently on the same GPU, and can export temporary per-seed replay chunks before merging them into one task-level `.pt` file under `replay_save_dir`.
+The replay output is organized as one final `.pt` per task, with the configured seeds collected for that task and merged into a batched episode TensorDict.
+Per-seed training reward CSVs are also written to `replay_save_dir/_csv/{task}_{seed}.csv`.
+You can inspect a saved task file with `python tdmpc2/validate_dataset_pt.py /path/to/task.pt`.
+
 ----
 
 ## Citation
