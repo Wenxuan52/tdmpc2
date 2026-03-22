@@ -59,6 +59,12 @@ def _build_seed_command(cfg, task: str, seed: int, temp_replay_root: Path, steps
 		f'planner_type={cfg.get("planner_type", "diffusion")}',
 		f'obs={cfg.get("obs", "state")}',
 		f'exp_name={exp_name}',
+		f'compile={str(bool(cfg.get("compile", False))).lower()}',
+		f'compile_mode={cfg.get("compile_mode", "max-autotune-no-cudagraphs")}',
+		f'diffusion_eval_compile={str(bool(cfg.get("diffusion_eval_compile", False))).lower()}',
+		f'diffusion_eval_compile_mode={cfg.get("diffusion_eval_compile_mode", "reduce-overhead")}',
+		f'eval_freq={int(cfg.get("eval_freq", 0) or 0)}',
+		f'save_model_every={int(cfg.get("save_model_every", 0) or 0)}',
 		f'save_agent={str(bool(cfg.get("save_agent", True))).lower()}',
 		f'save_video={str(bool(cfg.get("save_video", False))).lower()}',
 		f'enable_wandb={str(bool(cfg.get("enable_wandb", False))).lower()}',
@@ -148,9 +154,19 @@ def main():
 		default=str(Path(__file__).resolve().with_name('parallel_config.yaml')),
 		help='Path to parallel training YAML config.',
 	)
+	parser.add_argument('--replay_save_dir', default=None, help='Override replay_save_dir from config.')
+	parser.add_argument('--num_gpus', type=int, default=None, help='Override num_gpus from config.')
+	parser.add_argument('--tasks', nargs='*', default=None, help='Optional explicit task list override.')
 	args = parser.parse_args()
 
 	cfg = OmegaConf.load(args.config)
+	if args.replay_save_dir is not None:
+		cfg.replay_save_dir = args.replay_save_dir
+	if args.num_gpus is not None:
+		cfg.num_gpus = args.num_gpus
+		cfg.gpu_ids = []
+	if args.tasks:
+		cfg.tasks = args.tasks
 	tasks = _resolve_tasks(cfg)
 	gpu_ids = _resolve_gpu_ids(cfg)
 	repo_root = _repo_root()
