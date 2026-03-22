@@ -3,6 +3,7 @@ from time import time
 import numpy as np
 import torch
 from tensordict.tensordict import TensorDict
+from common.replay_buffer_saver import ReplayBufferSaver
 from trainer.base import Trainer
 
 
@@ -14,6 +15,7 @@ class OnlineTrainer(Trainer):
 		self._step = 0
 		self._ep_idx = 0
 		self._start_time = time()
+		self._replay_saver = ReplayBufferSaver(self.cfg)
 
 	def common_metrics(self):
 		"""Return a dictionary of current metrics."""
@@ -96,6 +98,7 @@ class OnlineTrainer(Trainer):
 					if info['terminated'] and not self.cfg.episodic:
 						raise ValueError('Termination detected but you are not in episodic mode. ' \
 						'Set `episodic=true` to enable support for terminations.')
+					episode_td = torch.cat(self._tds)
 					train_metrics.update(
 						episode_reward=torch.tensor([td['reward'] for td in self._tds[1:]]).sum(),
 						episode_success=info['success'],
@@ -103,7 +106,8 @@ class OnlineTrainer(Trainer):
 						episode_terminated=info['terminated'])
 					train_metrics.update(self.common_metrics())
 					self.logger.log(train_metrics, 'train')
-					self._ep_idx = self.buffer.add(torch.cat(self._tds))
+					self._replay_saver.add_episode(episode_td)
+					self._ep_idx = self.buffer.add(episode_td)
 
 				obs = self.env.reset()
 				self._tds = [self.to_td(obs)]
@@ -129,4 +133,5 @@ class OnlineTrainer(Trainer):
 
 			self._step += 1
 
+		self._replay_saver.finish()
 		self.logger.finish(self.agent)
