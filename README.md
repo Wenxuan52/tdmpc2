@@ -132,6 +132,7 @@ python evaluate.py task=dog-run checkpoint=/path/to/model.pt planner_type=diffus
 ```
 
 For a fast smoke test, reduce both `diffusion_steps` and `diffusion_num_samples` (e.g., 4 and 64).
+For more stable benchmarking, you can also enable `diffusion_eval_deterministic=true` to remove evaluation-time planner/policy sampling noise from the diffusion path.
 
 ### Parallel single-task online training with replay export
 

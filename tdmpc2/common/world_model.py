@@ -142,11 +142,16 @@ class WorldModel(nn.Module):
 		return torch.sigmoid(self._termination(z))
 		
 
-	def pi(self, z, task):
+	def pi(self, z, task, deterministic=False):
 		"""
 		Samples an action from the policy prior.
 		The policy prior is a Gaussian distribution with
 		mean and (log) std predicted by a neural network.
+
+		Args:
+			z: Latent state batch.
+			task: Optional task tensor for multi-task models.
+			deterministic: If True, return the squashed mean action instead of a sampled action.
 		"""
 		if self.cfg.multitask:
 			z = self.task_emb(z, task)
@@ -171,7 +176,7 @@ class WorldModel(nn.Module):
 		scaled_log_prob = log_prob * size
 
 		# Reparameterization trick
-		action = mean + eps * log_std.exp()
+		action = mean if deterministic else mean + eps * log_std.exp()
 		mean, action, log_prob = math.squash(mean, action, log_prob)
 
 		entropy_scale = scaled_log_prob / (log_prob + 1e-8)

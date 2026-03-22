@@ -24,6 +24,7 @@ class DiffusionPlanner:
 
 		self._eval_compile = bool(getattr(cfg, 'diffusion_eval_compile', True))
 		self._eval_compile_mode = str(getattr(cfg, 'diffusion_eval_compile_mode', 'reduce-overhead'))
+		self._eval_deterministic = bool(getattr(cfg, 'diffusion_eval_deterministic', False))
 
 		self._schedule_cache = {}
 		self._compiled_eval_value_fn = None
@@ -35,8 +36,8 @@ class DiffusionPlanner:
 			return None
 		agent_id = id(agent)
 		if self._compiled_eval_value_fn is None or self._compiled_eval_agent_id != agent_id:
-			def _value_fn(z, actions, task):
-				return agent._estimate_value(z, actions, task)
+			def _value_fn(z, actions, task, deterministic_pi):
+				return agent._estimate_value(z, actions, task, deterministic_pi=deterministic_pi)
 			self._compiled_eval_value_fn = torch.compile(_value_fn, mode=self._eval_compile_mode)
 			self._compiled_eval_agent_id = agent_id
 		return self._compiled_eval_value_fn
@@ -69,6 +70,7 @@ class DiffusionPlanner:
 		num_samples_mf = min(self._num_samples_mf, num_samples)
 		compute_score_mf_every = self._compute_score_mf_every
 		value_fn = self._get_value_fn(agent, eval_mode)
+		eval_deterministic = eval_mode and self._eval_deterministic
 
 		z0 = agent.model.encode(obs, task)
 		z = z0.repeat(num_samples, 1)
@@ -97,7 +99,10 @@ class DiffusionPlanner:
 			alpha_bar_tau = alpha_bar[tau]
 			mean_cond = x_tau / torch.sqrt(alpha_bar_tau)
 			std_cond = torch.sqrt((1.0 - alpha_bar_tau) / alpha_bar_tau)
-			eps = torch.randn(num_samples, cfg.horizon, cfg.action_dim, device=device)
+			if eval_deterministic:
+				eps = torch.zeros(num_samples, cfg.horizon, cfg.action_dim, device=device)
+			else:
+				eps = torch.randn(num_samples, cfg.horizon, cfg.action_dim, device=device)
 			a0_samples = mean_cond.unsqueeze(0) + std_cond * eps
 			if action_mask is not None:
 				a0_samples = a0_samples * action_mask
@@ -108,7 +113,7 @@ class DiffusionPlanner:
 				pi_actions = torch.empty(pi_trajs, cfg.horizon, cfg.action_dim, device=device)
 				z_pi = z0.repeat(pi_trajs, 1)
 				for t in range(cfg.horizon):
-					a_pi, _ = agent.model.pi(z_pi, task)
+					a_pi, _ = agent.model.pi(z_pi, task, deterministic=eval_deterministic)
 					if action_mask is not None:
 						a_pi = a_pi * action_mask
 					a_pi = a_pi.clamp(-1, 1)
@@ -118,9 +123,9 @@ class DiffusionPlanner:
 
 			actions_for_value = a0_samples.permute(1, 0, 2)
 			if value_fn is None:
-				values = agent._estimate_value(z, actions_for_value, task)
+				values = agent._estimate_value(z, actions_for_value, task, deterministic_pi=eval_deterministic)
 			else:
-				values = value_fn(z, actions_for_value, task)
+				values = value_fn(z, actions_for_value, task, eval_deterministic)
 			values = values.nan_to_num(0.0).squeeze(-1)
 
 			g_mean = values.mean()
