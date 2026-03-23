@@ -103,7 +103,27 @@ class TDMPC2(torch.nn.Module):
 			state_dict = torch.load(fp, map_location=torch.get_default_device(), weights_only=False)
 		state_dict = state_dict["model"] if "model" in state_dict else state_dict
 		state_dict = api_model_conversion(self.model.state_dict(), state_dict)
-		self.model.load_state_dict(state_dict)
+		missing_keys, unexpected_keys = self.model.load_state_dict(state_dict, strict=False)
+
+		planner_type = self.cfg.get('planner_type', 'mppi')
+		allowed_missing_keys = tuple()
+		if planner_type != 'diffusion':
+			allowed_missing_keys = tuple(key for key in missing_keys if key.startswith('_G.'))
+			missing_keys = [key for key in missing_keys if key not in allowed_missing_keys]
+
+		if missing_keys or unexpected_keys:
+			pieces = []
+			if missing_keys:
+				pieces.append(f'Missing key(s) in state_dict: {missing_keys}')
+			if unexpected_keys:
+				pieces.append(f'Unexpected key(s) in state_dict: {unexpected_keys}')
+			extra = ''
+			if allowed_missing_keys:
+				extra = (
+					' Legacy checkpoint note: missing `_G` weights were ignored because '
+					'`planner_type` is not `diffusion`; the current model keeps its initialized `_G` parameters.'
+				)
+			raise RuntimeError('Error(s) in loading state_dict for WorldModel: ' + '; '.join(pieces) + extra)
 		return
 
 	@torch.no_grad()
