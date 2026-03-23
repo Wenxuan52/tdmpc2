@@ -125,43 +125,18 @@ def _evaluate_worker(payload):
 	torch.cuda.set_device(0)
 
 	cfg = ConfigNamespace(**payload['cfg'])
-	if payload.get('disable_cudagraphs_for_compile', False) and cfg.get('diffusion_eval_compile', False):
-		# `reduce-overhead` compile can route through Inductor CUDA graphs, which is unstable here
-		# under multiprocessing + multi-GPU evaluation. Keep torch.compile enabled, but disable
-		# CUDA-graph capture for the worker to avoid replay/deallocation invariant failures.
-		cfg.diffusion_eval_compile_mode = 'max-autotune-no-cudagraphs'
-		if hasattr(torch, '_inductor') and hasattr(torch._inductor, 'config') and hasattr(torch._inductor.config, 'triton'):
-			torch._inductor.config.triton.cudagraphs = False
-		print(
-			f'[device cuda:{visible_device}] using diffusion_eval_compile_mode='
-			f'{cfg.diffusion_eval_compile_mode} for multi-process compiled eval',
-			flush=True,
-		)
-
-	try:
-		return _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2)
-	except RuntimeError as exc:
-		if cfg.get('diffusion_eval_compile', False) and 'graph recording observed an input tensor deallocate' in str(exc):
-			print(
-				f'[device cuda:{visible_device}] compiled diffusion eval still hit a CUDA-graph runtime error; '
-				f'falling back to non-compiled diffusion eval for this worker.',
-				flush=True,
-			)
-			cfg.diffusion_eval_compile = False
-			cfg.diffusion_eval_compile_mode = 'default'
-			return _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2)
-		raise
+	return _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2)
 
 
 @hydra.main(config_name='config', config_path='.')
-def evaluate_diffusion(cfg: dict):
-	"""Evaluate a diffusion-planner TD-MPC2 checkpoint, optionally in parallel across GPUs."""
+def evaluate_mppi(cfg: dict):
+	"""Evaluate an MPPI-planner TD-MPC2 checkpoint, optionally in parallel across GPUs."""
 	parsed_cfg = parse_cfg(cfg)
 	cfg_dict = _cfg_to_dict(parsed_cfg)
 	eval_devices = _parse_eval_devices(cfg.get('eval_devices', None))
 
-	assert cfg_dict['planner_type'] == 'diffusion', \
-		'`evaluate_diffusion.py` is intended for planner_type=diffusion.'
+	assert cfg_dict['planner_type'] == 'mppi', \
+		'`evaluate_mppi.py` is intended for planner_type=mppi.'
 	assert cfg_dict['eval_episodes'] > 0, 'Must evaluate at least 1 episode.'
 	assert cfg_dict.get('topk', 0) >= 0, 'topk must be >= 0.'
 	if cfg_dict.get('topk', 0) > cfg_dict['eval_episodes']:
@@ -175,22 +150,13 @@ def evaluate_diffusion(cfg: dict):
 	print(colored(f'Model size: {cfg_dict.get("model_size", "default")}', 'blue', attrs=['bold']))
 	print(colored(f'Checkpoint: {cfg_dict["checkpoint"]}', 'blue', attrs=['bold']))
 	print(colored(f'Planner type: {cfg_dict["planner_type"]}', 'blue', attrs=['bold']))
-	print(colored(f'Diffusion eval compile: {cfg_dict.get("diffusion_eval_compile", False)}', 'blue', attrs=['bold']))
 	aggregation_mode = 'average' if cfg_dict.get('topk', 0) == 0 else f'top-{cfg_dict["topk"]} mean'
 	print(colored(f'Episode reward aggregation: {aggregation_mode}', 'blue', attrs=['bold']))
 	print(colored(f'Episode success aggregation: {aggregation_mode}', 'blue', attrs=['bold']))
 	print(colored(f'Eval devices: {eval_devices}', 'blue', attrs=['bold']))
 
-	disable_cudagraphs_for_compile = len(eval_devices) > 1 and cfg_dict.get('diffusion_eval_compile', False)
-	if disable_cudagraphs_for_compile:
-		print(colored(
-			'Multi-process compiled diffusion eval detected: workers will use '
-			'`max-autotune-no-cudagraphs`, and if PyTorch still fails they will '
-			'fall back to non-compiled diffusion eval for that worker only.',
-			'yellow', attrs=['bold']))
-
 	if cfg_dict.get('save_video', False) and len(eval_devices) > 1:
-		raise ValueError('save_video=true is only supported with a single eval device in evaluate_diffusion.py.')
+		raise ValueError('save_video=true is only supported with a single eval device in evaluate_mppi.py.')
 
 	if cfg_dict['multitask']:
 		print(colored(f'Evaluating agent on {len(cfg_dict["tasks"])} tasks:', 'yellow', attrs=['bold']))
@@ -212,7 +178,6 @@ def evaluate_diffusion(cfg: dict):
 			'eval_episodes': cfg_dict['eval_episodes'],
 			'topk': cfg_dict.get('topk', 0),
 			'seed': cfg_dict['seed'] + worker_idx,
-			'disable_cudagraphs_for_compile': disable_cudagraphs_for_compile,
 		}
 		for worker_idx, (device, shard) in enumerate(zip(eval_devices, shards)) if shard
 	]
@@ -244,4 +209,4 @@ def evaluate_diffusion(cfg: dict):
 
 
 if __name__ == '__main__':
-	evaluate_diffusion()
+	evaluate_mppi()
