@@ -59,6 +59,21 @@ def _task_score(task_name, episode_reward, episode_success, multitask):
 	return episode_success * 100 if task_name.startswith('mw-') else episode_reward / 10
 
 
+def _aggregate_episode_reward(ep_rewards, topk):
+	if topk < 0:
+		raise ValueError(f'topk must be >= 0, got {topk}.')
+	if not ep_rewards:
+		raise ValueError('ep_rewards must contain at least one episode reward.')
+	if topk == 0:
+		return float(np.mean(ep_rewards))
+	if topk > len(ep_rewards):
+		raise ValueError(
+			f'topk={topk} cannot exceed the number of evaluated episodes ({len(ep_rewards)}).'
+		)
+	sorted_rewards = sorted(ep_rewards, reverse=True)
+	return float(np.mean(sorted_rewards[:topk]))
+
+
 def _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2):
 	set_seed(payload['seed'])
 	env = make_env(cfg)
@@ -83,7 +98,7 @@ def _run_worker_eval(cfg, payload, visible_device, torch, make_env, TDMPC2):
 			ep_rewards.append(ep_reward)
 			ep_successes.append(info['success'])
 			print(f'[device cuda:{visible_device}] task={task_name} episode={episode_idx + 1}/{payload["eval_episodes"]} reward={ep_reward:.3f} success={info["success"]:.3f}', flush=True)
-		episode_reward = float(np.mean(ep_rewards))
+		episode_reward = _aggregate_episode_reward(ep_rewards, payload['topk'])
 		episode_success = float(np.mean(ep_successes))
 		results.append({
 			'task_idx': task_idx,
@@ -148,6 +163,11 @@ def evaluate_diffusion(cfg: dict):
 	assert cfg_dict['planner_type'] == 'diffusion', \
 		'`evaluate_diffusion.py` is intended for planner_type=diffusion.'
 	assert cfg_dict['eval_episodes'] > 0, 'Must evaluate at least 1 episode.'
+	assert cfg_dict.get('topk', 0) >= 0, 'topk must be >= 0.'
+	if cfg_dict.get('topk', 0) > cfg_dict['eval_episodes']:
+		raise ValueError(
+			f'topk={cfg_dict["topk"]} cannot exceed eval_episodes={cfg_dict["eval_episodes"]}.'
+		)
 	assert os.path.exists(cfg_dict['checkpoint']), f'Checkpoint {cfg_dict["checkpoint"]} not found! Must be a valid filepath.'
 
 	set_seed(cfg_dict['seed'])
@@ -156,6 +176,8 @@ def evaluate_diffusion(cfg: dict):
 	print(colored(f'Checkpoint: {cfg_dict["checkpoint"]}', 'blue', attrs=['bold']))
 	print(colored(f'Planner type: {cfg_dict["planner_type"]}', 'blue', attrs=['bold']))
 	print(colored(f'Diffusion eval compile: {cfg_dict.get("diffusion_eval_compile", False)}', 'blue', attrs=['bold']))
+	reward_mode = 'average' if cfg_dict.get('topk', 0) == 0 else f'top-{cfg_dict["topk"]} mean'
+	print(colored(f'Episode reward aggregation: {reward_mode}', 'blue', attrs=['bold']))
 	print(colored(f'Eval devices: {eval_devices}', 'blue', attrs=['bold']))
 
 	disable_cudagraphs_for_compile = len(eval_devices) > 1 and cfg_dict.get('diffusion_eval_compile', False)
@@ -187,6 +209,7 @@ def evaluate_diffusion(cfg: dict):
 			'device': device,
 			'task_indices': shard,
 			'eval_episodes': cfg_dict['eval_episodes'],
+			'topk': cfg_dict.get('topk', 0),
 			'seed': cfg_dict['seed'] + worker_idx,
 			'disable_cudagraphs_for_compile': disable_cudagraphs_for_compile,
 		}
