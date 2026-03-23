@@ -9,6 +9,7 @@ episodic: false
 # evaluation
 checkpoint: ???
 eval_episodes: 10
+topk: 0
 eval_freq: 50000
 eval_devices: 'cuda:0'
 save_model_every: 100_000
