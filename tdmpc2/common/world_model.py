@@ -28,9 +28,10 @@ class WorldModel(nn.Module):
 		self._termination = layers.mlp(cfg.latent_dim + cfg.task_dim, 2*[cfg.mlp_dim], 1) if cfg.episodic else None
 		self._pi = layers.mlp(cfg.latent_dim + cfg.task_dim, 2*[cfg.mlp_dim], 2*cfg.action_dim)
 		self._G = layers.mlp(cfg.latent_dim + cfg.action_dim*cfg.horizon + cfg.task_dim, 2*[cfg.mlp_dim], 1)
+		self._F = layers.mlp(cfg.latent_dim + cfg.action_dim + cfg.task_dim, 2*[cfg.mlp_dim], 1)
 		self._Qs = layers.Ensemble([layers.mlp(cfg.latent_dim + cfg.action_dim + cfg.task_dim, 2*[cfg.mlp_dim], max(cfg.num_bins, 1), dropout=cfg.dropout) for _ in range(cfg.num_q)])
 		self.apply(init.weight_init)
-		init.zero_([self._reward[-1].weight, self._G[-1].weight, self._Qs.params["2", "weight"]])
+		init.zero_([self._reward[-1].weight, self._G[-1].weight, self._F[-1].weight, self._Qs.params["2", "weight"]])
 
 		self.register_buffer("log_std_min", torch.tensor(cfg.log_std_min))
 		self.register_buffer("log_std_dif", torch.tensor(cfg.log_std_max) - self.log_std_min)
@@ -55,8 +56,8 @@ class WorldModel(nn.Module):
 
 	def __repr__(self):
 		repr = 'TD-MPC2 World Model\n'
-		modules = ['Encoder', 'Dynamics', 'Reward', 'Termination', 'Policy prior', 'G-function', 'Q-functions']
-		for i, m in enumerate([self._encoder, self._dynamics, self._reward, self._termination, self._pi, self._G, self._Qs]):
+		modules = ['Encoder', 'Dynamics', 'Reward', 'Termination', 'Policy prior', 'G-function', 'Contrastive score', 'Q-functions']
+		for i, m in enumerate([self._encoder, self._dynamics, self._reward, self._termination, self._pi, self._G, self._F, self._Qs]):
 			if m == self._termination and not self.cfg.episodic:
 				continue
 			repr += f"{modules[i]}: {m}\n"
@@ -197,6 +198,12 @@ class WorldModel(nn.Module):
 		if self.cfg.multitask:
 			z = self.task_emb(z, task)
 		return self._G(torch.cat([z, actions.reshape(actions.shape[0], -1)], dim=-1))
+
+	def F(self, z, a, task):
+		"""Predict contrastive behavior score for latent-action pairs."""
+		if self.cfg.multitask:
+			z = self.task_emb(z, task)
+		return self._F(torch.cat([z, a], dim=-1))
 
 	def Q(self, z, a, task, return_type='min', target=False, detach=False):
 		"""

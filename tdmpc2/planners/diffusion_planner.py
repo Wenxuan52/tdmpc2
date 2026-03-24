@@ -10,7 +10,7 @@ class DiffusionPlanner:
 		self._num_samples = int(cfg.diffusion_num_samples)
 		self._temperature = float(cfg.diffusion_temperature)
 		self._action_noise = float(cfg.diffusion_action_noise)
-		self._mf_beta = float(getattr(cfg, 'diffusion_mf_beta', 0.2))
+		self._mf_beta = float(getattr(cfg, 'diffusion_mf_beta', 0.0))
 		self._mf_beta = min(max(self._mf_beta, 0.0), 1.0)
 		self._mf_eta = float(getattr(cfg, 'diffusion_mf_eta', 1.0))
 		self._num_samples_mf = int(getattr(cfg, 'diffusion_num_samples_mf', 64))
