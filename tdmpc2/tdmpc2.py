@@ -26,7 +26,7 @@ class TDMPC2(torch.nn.Module):
 			{'params': self.model._dynamics.parameters()},
 			{'params': self.model._reward.parameters()},
 			{'params': self.model._termination.parameters() if self.cfg.episodic else []},
-			{'params': self.model._G.parameters()},
+			{'params': self.model._F.parameters()},
 			{'params': self.model._Qs.parameters()},
 			{'params': self.model._task_emb.parameters() if self.cfg.multitask else []
 			 }
@@ -36,6 +36,12 @@ class TDMPC2(torch.nn.Module):
 		self.scale = RunningScale(cfg)
 		self.cfg.iterations += 2*int(cfg.action_dim >= 20) # Heuristic for large action spaces
 		self._compile_mode = str(getattr(cfg, 'compile_mode', 'max-autotune-no-cudagraphs'))
+		self._contrastive_beta = float(getattr(cfg, 'contrastive_beta', 0.2))
+		self._contrastive_coef = float(getattr(cfg, 'contrastive_coef', 1.0))
+		self._contrastive_clip = float(getattr(cfg, 'contrastive_clip', 5.0))
+		self._contrastive_momentum = float(getattr(cfg, 'contrastive_momentum', 0.99))
+		self.register_buffer("_contrastive_mean", torch.zeros(1, device=self.device))
+		self.register_buffer("_contrastive_std", torch.ones(1, device=self.device))
 		self.discount = torch.tensor(
 			[self._get_discount(ep_len) for ep_len in cfg.episode_lengths], device='cuda:0'
 		) if self.cfg.multitask else self._get_discount(cfg.episode_length)
@@ -110,6 +116,8 @@ class TDMPC2(torch.nn.Module):
 		if planner_type != 'diffusion':
 			allowed_missing_keys = tuple(key for key in missing_keys if key.startswith('_G.'))
 			missing_keys = [key for key in missing_keys if key not in allowed_missing_keys]
+		allowed_f_keys = tuple(key for key in missing_keys if key.startswith('_F.'))
+		missing_keys = [key for key in missing_keys if key not in allowed_f_keys]
 
 		if missing_keys or unexpected_keys:
 			pieces = []
@@ -159,14 +167,65 @@ class TDMPC2(torch.nn.Module):
 		termination = torch.zeros(num_samples, 1, dtype=torch.float32, device=z.device)
 		for t in range(self.cfg.horizon):
 			reward = math.two_hot_inv(self.model.reward(z, actions[t], task), self.cfg)
+			f_score = self.model.F(z, actions[t], task)
+			f_norm = self._normalize_contrastive_score(f_score)
+			shaped_reward = reward + self._contrastive_beta * f_norm
 			z = self.model.next(z, actions[t], task)
-			G = G + discount * (1-termination) * reward
+			G = G + discount * (1-termination) * shaped_reward
 			discount_update = self.discount[torch.tensor(task)] if self.cfg.multitask else self.discount
 			discount = discount * discount_update
 			if self.cfg.episodic:
 				termination = torch.clip(termination + (self.model.termination(z, task) > 0.5).float(), max=1.)
 		action, _ = self.model.pi(z, task)
 		return G + discount * (1-termination) * self.model.Q(z, action, task, return_type='avg')
+
+	def _normalize_contrastive_score(self, score):
+		std = torch.clamp(self._contrastive_std, min=1e-6)
+		normed = (score - self._contrastive_mean) / std
+		return normed.clamp(-self._contrastive_clip, self._contrastive_clip)
+
+	@torch.no_grad()
+	def _update_contrastive_stats(self, scores):
+		batch_mean = scores.mean()
+		batch_std = scores.std(unbiased=False)
+		batch_std = torch.clamp(batch_std, min=1e-6)
+		self._contrastive_mean.mul_(self._contrastive_momentum).add_(batch_mean * (1 - self._contrastive_momentum))
+		self._contrastive_std.mul_(self._contrastive_momentum).add_(batch_std * (1 - self._contrastive_momentum))
+
+	def _contrastive_loss(self, zs, actions, task):
+		"""
+		Binary contrastive objective: buffer actions as positives and model-generated actions as hard negatives.
+		"""
+		z_flat = zs.reshape(-1, zs.shape[-1]).detach()
+		a_pos = actions.permute(1, 0, 2).reshape(-1, actions.shape[-1])
+		task_flat = None
+		if task is not None:
+			task_flat = task.long().reshape(-1).repeat_interleave(self.cfg.horizon)
+
+		pos_logits = self.model.F(z_flat, a_pos, task_flat)
+		labels_pos = torch.ones_like(pos_logits)
+
+		with torch.no_grad():
+			pi_action, _ = self.model.pi(z_flat, task_flat)
+			noise_scale = float(getattr(self.cfg, 'contrastive_neg_noise', 0.5))
+			noisy_action = (pi_action + noise_scale * torch.randn_like(pi_action)).clamp(-1, 1)
+			random_action = (2.0 * torch.rand_like(pi_action) - 1.0).clamp(-1, 1)
+			candidate_actions = torch.stack([pi_action, noisy_action, random_action], dim=1)
+			candidate_logits = self.model.F(
+				z_flat.unsqueeze(1).expand(-1, candidate_actions.shape[1], -1).reshape(-1, z_flat.shape[-1]),
+				candidate_actions.reshape(-1, candidate_actions.shape[-1]),
+				task_flat.repeat_interleave(candidate_actions.shape[1]) if task_flat is not None else None,
+			).reshape(-1, candidate_actions.shape[1], 1).squeeze(-1)
+			hard_idx = candidate_logits.argmax(dim=1)
+			hard_neg = candidate_actions[torch.arange(candidate_actions.shape[0], device=hard_idx.device), hard_idx]
+
+		neg_logits = self.model.F(z_flat, hard_neg, task_flat)
+		labels_neg = torch.zeros_like(neg_logits)
+
+		loss_pos = F.binary_cross_entropy_with_logits(pos_logits, labels_pos)
+		loss_neg = F.binary_cross_entropy_with_logits(neg_logits, labels_neg)
+		self._update_contrastive_stats(torch.cat([pos_logits.detach(), neg_logits.detach()], dim=0))
+		return 0.5 * (loss_pos + loss_neg)
 
 	@torch.no_grad()
 	def _plan(self, obs, t0=False, eval_mode=False, task=None):
@@ -291,30 +350,10 @@ class TDMPC2(torch.nn.Module):
 		target_q = math.two_hot_inv(target_qs[:2], self.cfg).min(0).values
 		return reward + discount * (1-terminated) * target_q
 
-	@torch.no_grad()
-	def _g_target(self, obs, reward, terminated, task):
-		"""
-		Compute a replay-data target for G from real rewards and a terminal bootstrap Q-value.
-		"""
-		final_z = self.model.encode(obs[-1], task)
-		_, info = self.model.pi(final_z, task)
-		bootstrap_qs = self.model.Q(final_z, info["mean"], task, return_type='all', target=True)
-		bootstrap_q = math.two_hot_inv(bootstrap_qs[:2], self.cfg).sum(0) / 2
-		discount = self.discount[task].unsqueeze(-1) if self.cfg.multitask else self.discount
-		target = torch.zeros_like(bootstrap_q)
-		discount_t = torch.ones_like(bootstrap_q)
-		alive = torch.ones_like(bootstrap_q)
-		for rew_t, term_t in zip(reward.unbind(0), terminated.unbind(0)):
-			target = target + discount_t * alive * rew_t
-			alive = alive * (1 - term_t)
-			discount_t = discount_t * discount
-		return target + discount_t * alive * bootstrap_q
-
 	def _update_core(self, obs, action, reward, terminated, task=None):
 		with torch.no_grad():
 			next_z = self.model.encode(obs[1:], task)
 			td_targets = self._td_target(next_z, reward, terminated, task)
-			g_targets = self._g_target(obs, reward, terminated, task)
 
 		zs = torch.empty(self.cfg.horizon+1, self.cfg.batch_size, self.cfg.latent_dim, device=self.device)
 		z = self.model.encode(obs[0], task)
@@ -326,13 +365,12 @@ class TDMPC2(torch.nn.Module):
 			zs[t+1] = z
 
 		_zs = zs[:-1]
-		g_preds = self.model.G(zs[0], action.permute(1, 0, 2), task)
 		qs = self.model.Q(_zs, action, task, return_type='all')
 		reward_preds = self.model.reward(_zs, action, task)
 		termination_pred = self.model.termination(zs[1:], task, unnormalized=True) if self.cfg.episodic else None
 
 		reward_loss, value_loss = 0, 0
-		g_loss = F.smooth_l1_loss(g_preds, g_targets)
+		contrastive_loss = self._contrastive_loss(_zs, action, task)
 		for t, (rew_pred_unbind, rew_unbind, td_targets_unbind, qs_unbind) in enumerate(zip(reward_preds.unbind(0), reward.unbind(0), td_targets.unbind(0), qs.unbind(1))):
 			reward_loss = reward_loss + math.soft_ce(rew_pred_unbind, rew_unbind, self.cfg).mean() * self.cfg.rho**t
 			for qs_unbind_unbind in qs_unbind.unbind(0):
@@ -346,14 +384,14 @@ class TDMPC2(torch.nn.Module):
 			self.cfg.consistency_coef * consistency_loss +
 			self.cfg.reward_coef * reward_loss +
 			self.cfg.termination_coef * termination_loss +
-			getattr(self.cfg, 'g_coef', 1.0) * g_loss +
+			self._contrastive_coef * contrastive_loss +
 			self.cfg.value_coef * value_loss
 		)
-		return zs.detach(), consistency_loss, reward_loss, value_loss, g_loss, termination_loss, total_loss, termination_pred
+		return zs.detach(), consistency_loss, reward_loss, value_loss, contrastive_loss, termination_loss, total_loss, termination_pred
 
 	def _update(self, obs, action, reward, terminated, task=None):
 		self.model.train()
-		zs, consistency_loss, reward_loss, value_loss, g_loss, termination_loss, total_loss, termination_pred = self._compiled_update_core(
+		zs, consistency_loss, reward_loss, value_loss, contrastive_loss, termination_loss, total_loss, termination_pred = self._compiled_update_core(
 			obs, action, reward, terminated, task,
 		)
 
@@ -375,7 +413,7 @@ class TDMPC2(torch.nn.Module):
 			"consistency_loss": consistency_loss,
 			"reward_loss": reward_loss,
 			"value_loss": value_loss,
-			"g_loss": g_loss,
+			"contrastive_loss": contrastive_loss,
 			"termination_loss": termination_loss,
 			"total_loss": total_loss,
 			"grad_norm": grad_norm,
