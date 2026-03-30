@@ -54,9 +54,17 @@ def parse_cfg(cfg: OmegaConf) -> OmegaConf:
 			pass
 
 	# Convenience
-	cfg.work_dir = Path(hydra.utils.get_original_cwd()) / 'logs' / cfg.task / str(cfg.seed) / cfg.exp_name
 	cfg.task_title = cfg.task.replace("-", " ").title()
 	cfg.bin_size = (cfg.vmax - cfg.vmin) / (cfg.num_bins-1) # Bin size for discrete regression
+	cfg.multitask = cfg.task in TASK_SET.keys()
+
+	default_work_dir = Path(hydra.utils.get_original_cwd()) / 'logs' / cfg.task / str(cfg.seed) / cfg.exp_name
+	if cfg.multitask:
+		offline_root = str(cfg.get('offline_checkpoint_root', '') or '').strip()
+		cfg.work_dir = Path(offline_root) / cfg.task / str(cfg.seed) if offline_root else default_work_dir
+	else:
+		online_root = str(cfg.get('online_save_root', '') or '').strip()
+		cfg.work_dir = Path(online_root) / cfg.task / str(cfg.seed) / cfg.exp_name if online_root else default_work_dir
 
 	# Model size
 	if cfg.get('model_size', None) is not None:
@@ -67,8 +75,6 @@ def parse_cfg(cfg: OmegaConf) -> OmegaConf:
 		if cfg.task == 'mt30' and cfg.model_size == 19:
 			cfg.latent_dim = 512 # This checkpoint is slightly smaller
 
-	# Multi-task
-	cfg.multitask = cfg.task in TASK_SET.keys()
 	if cfg.multitask:
 		cfg.task_title = cfg.task.upper()
 		# Account for slight inconsistency in task_dim for the mt30 experiments

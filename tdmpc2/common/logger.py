@@ -108,7 +108,8 @@ class Logger:
 
 	def __init__(self, cfg):
 		self._log_dir = make_dir(cfg.work_dir)
-		self._model_dir = make_dir(self._log_dir / "models")
+		model_root = self._log_dir if getattr(cfg, 'multitask', False) else self._log_dir / "models"
+		self._model_dir = make_dir(model_root)
 		self._save_csv = cfg.save_csv
 		self._save_agent = cfg.save_agent
 		self._group = cfg_to_group(cfg)
