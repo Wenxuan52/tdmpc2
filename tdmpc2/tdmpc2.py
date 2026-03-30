@@ -111,11 +111,11 @@ class TDMPC2(torch.nn.Module):
 		state_dict = api_model_conversion(self.model.state_dict(), state_dict)
 		missing_keys, unexpected_keys = self.model.load_state_dict(state_dict, strict=False)
 
-		planner_type = self.cfg.get('planner_type', 'mppi')
-		allowed_missing_keys = tuple()
-		if planner_type != 'diffusion':
-			allowed_missing_keys = tuple(key for key in missing_keys if key.startswith('_G.'))
-			missing_keys = [key for key in missing_keys if key not in allowed_missing_keys]
+		# Backward compatibility: `_G` was removed from the world model.
+		allowed_missing_g_keys = tuple(key for key in missing_keys if key.startswith('_G.'))
+		missing_keys = [key for key in missing_keys if key not in allowed_missing_g_keys]
+		allowed_unexpected_g_keys = tuple(key for key in unexpected_keys if key.startswith('_G.'))
+		unexpected_keys = [key for key in unexpected_keys if key not in allowed_unexpected_g_keys]
 		allowed_f_keys = tuple(key for key in missing_keys if key.startswith('_F.'))
 		missing_keys = [key for key in missing_keys if key not in allowed_f_keys]
 
@@ -126,10 +126,9 @@ class TDMPC2(torch.nn.Module):
 			if unexpected_keys:
 				pieces.append(f'Unexpected key(s) in state_dict: {unexpected_keys}')
 			extra = ''
-			if allowed_missing_keys:
+			if allowed_missing_g_keys or allowed_unexpected_g_keys:
 				extra = (
-					' Legacy checkpoint note: missing `_G` weights were ignored because '
-					'`planner_type` is not `diffusion`; the current model keeps its initialized `_G` parameters.'
+					' Legacy checkpoint note: `_G` weights were ignored because `_G` is no longer part of WorldModel.'
 				)
 			raise RuntimeError('Error(s) in loading state_dict for WorldModel: ' + '; '.join(pieces) + extra)
 		return
