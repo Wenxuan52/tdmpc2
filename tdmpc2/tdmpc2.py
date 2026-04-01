@@ -31,7 +31,8 @@ class TDMPC2(torch.nn.Module):
 		base_model.forward = _dispatch_forward
 		self.model = base_model
 		self._ddp_enabled = bool(getattr(cfg, 'use_ddp', False)) and dist.is_available() and dist.is_initialized()
-		if self._ddp_enabled:
+		self._use_native_ddp_wrapper = self._ddp_enabled and bool(getattr(cfg, 'ddp_use_native_wrapper', False))
+		if self._use_native_ddp_wrapper:
 			local_rank = int(getattr(cfg, 'local_rank', os.environ.get('LOCAL_RANK', 0)))
 			ddp_kwargs = {
 				'find_unused_parameters': bool(getattr(cfg, 'ddp_find_unused_parameters', True)),
@@ -87,6 +88,18 @@ class TDMPC2(torch.nn.Module):
 		if isinstance(self.model, DDP):
 			return self.model(call_name, *args, **kwargs)
 		return getattr(self.model, call_name)(*args, **kwargs)
+
+	def _sync_gradients(self, params):
+		if not self._ddp_enabled:
+			return
+		world_size = dist.get_world_size()
+		if world_size <= 1:
+			return
+		for p in params:
+			if p.grad is None:
+				continue
+			dist.all_reduce(p.grad, op=dist.ReduceOp.SUM)
+			p.grad.div_(world_size)
 
 	@property
 	def plan(self):
@@ -350,6 +363,8 @@ class TDMPC2(torch.nn.Module):
 		rho = torch.pow(self.cfg.rho, torch.arange(len(qs), device=self.device))
 		pi_loss = (-(self.cfg.entropy_coef * info["scaled_entropy"] + qs).mean(dim=(1,2)) * rho).mean()
 		pi_loss.backward()
+		if not self._use_native_ddp_wrapper:
+			self._sync_gradients(self._raw_model._pi.parameters())
 		pi_grad_norm = torch.nn.utils.clip_grad_norm_(self._raw_model._pi.parameters(), self.cfg.grad_clip_norm)
 		self.pi_optim.step()
 		self.pi_optim.zero_grad(set_to_none=True)
@@ -430,6 +445,8 @@ class TDMPC2(torch.nn.Module):
 
 		# Update model
 		total_loss.backward()
+		if not self._use_native_ddp_wrapper:
+			self._sync_gradients(self._raw_model.parameters())
 		grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_clip_norm)
 		self.optim.step()
 		self.optim.zero_grad(set_to_none=True)

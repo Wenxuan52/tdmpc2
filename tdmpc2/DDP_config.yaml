@@ -16,6 +16,8 @@ master_port: 29500
 # Set true for TD-MPC2 because update uses multiple method-dispatched forwards
 # where not all parameters participate in every call.
 ddp_find_unused_parameters: true
+# Keep false for stability with TD-MPC2 multi-call update graph.
+ddp_use_native_wrapper: false
 ddp_broadcast_buffers: false
 ddp_static_graph: false
 ddp_gradient_as_bucket_view: true

@@ -49,6 +49,7 @@ torchrun --standalone --nproc_per_node=2 -m tdmpc2.train \
   eval_freq=0 \
   save_model_every=2500000 \
   ddp_find_unused_parameters=true \
+  ddp_use_native_wrapper=false \
   ddp_compile_strategy=off \
   compile=true \
   compile_mode='max-autotune-no-cudagraphs' \
