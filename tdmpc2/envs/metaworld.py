@@ -1,6 +1,6 @@
 import numpy as np
 import gym
-from envs.wrappers.timeout import Timeout
+from tdmpc2.envs.wrappers.timeout import Timeout
 
 from metaworld.envs import ALL_V2_ENVIRONMENTS_GOAL_OBSERVABLE
 
