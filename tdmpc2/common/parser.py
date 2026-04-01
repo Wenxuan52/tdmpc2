@@ -8,7 +8,14 @@ import hydra
 import torch
 from omegaconf import OmegaConf
 
-from common import MODEL_SIZE, TASK_SET
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from tdmpc2.common import MODEL_SIZE, TASK_SET
 
 
 def cfg_to_dataclass(cfg, frozen=False):
