@@ -66,6 +66,22 @@ def _cleanup_distributed():
 	if dist.is_available() and dist.is_initialized():
 		dist.destroy_process_group()
 
+def _resolve_compile_strategy(cfg):
+	"""
+	Resolve compile behavior for DDP runs.
+	Default strategy is conservative: disable compile for world_size > 1.
+	"""
+	strategy = str(getattr(cfg, 'ddp_compile_strategy', 'off')).lower()
+	is_distributed = int(getattr(cfg, 'world_size', 1) or 1) > 1
+	if not is_distributed:
+		return
+	if strategy == 'off':
+		cfg.compile = False
+	elif strategy == 'on':
+		pass
+	else:
+		raise ValueError(f"Invalid ddp_compile_strategy={strategy}. Expected one of: off, on.")
+
 
 @hydra.main(config_name='config', config_path='.')
 def train(cfg: dict):
@@ -91,8 +107,11 @@ def train(cfg: dict):
 	assert cfg.steps > 0, 'Must train for at least 1 step.'
 	cfg = parse_cfg(cfg)
 	_init_distributed(cfg)
+	_resolve_compile_strategy(cfg)
 	set_seed(cfg.seed)
 	print(colored('Work dir:', 'yellow', attrs=['bold']), cfg.work_dir)
+	if int(getattr(cfg, 'global_rank', 0) or 0) == 0:
+		print(colored('Compile enabled:', 'yellow', attrs=['bold']), bool(cfg.compile))
 
 	trainer_cls = OfflineTrainer if cfg.multitask else OnlineTrainer
 	trainer = trainer_cls(
