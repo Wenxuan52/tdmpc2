@@ -1,0 +1,24 @@
+defaults:
+  - config
+
+# Offline training DDP parameters
+use_ddp: true
+distributed_backend: nccl
+distributed_init_method: env://
+distributed_timeout_sec: 1800
+device: null
+local_rank: 0
+global_rank: 0
+world_size: 1
+master_addr: '127.0.0.1'
+master_port: 29500
+
+ddp_find_unused_parameters: false
+ddp_broadcast_buffers: false
+ddp_static_graph: false
+ddp_gradient_as_bucket_view: true
+
+# Offline parallel data loading knobs
+offline_shard_dataset_by_rank: false
+offline_sync_eval: false
+offline_eval_rank0_only: true

@@ -1,3 +1,5 @@
+import os
+
 import torch
 from tensordict.tensordict import TensorDict
 from torchrl.data.replay_buffers import ReplayBuffer, LazyTensorStorage
@@ -12,7 +14,8 @@ class Buffer():
 
 	def __init__(self, cfg):
 		self.cfg = cfg
-		self._device = torch.device('cuda:0')
+		default_device = f'cuda:{int(os.environ.get("LOCAL_RANK", 0))}' if torch.cuda.is_available() else 'cpu'
+		self._device = torch.device(str(getattr(cfg, 'device', default_device)))
 		self._capacity = min(cfg.buffer_size, cfg.steps)
 		self._sampler = SliceSampler(
 			num_slices=self.cfg.batch_size,
@@ -50,7 +53,7 @@ class Buffer():
 	def _init(self, tds):
 		"""Initialize the replay buffer. Use the first episode to estimate storage requirements."""
 		print(f'Buffer capacity: {self._capacity:,}')
-		mem_free, _ = torch.cuda.mem_get_info()
+		mem_free, _ = torch.cuda.mem_get_info(self._device) if self._device.type == 'cuda' else (0, 0)
 		bytes_per_step = sum([
 				(v.numel()*v.element_size() if not isinstance(v, TensorDict) \
 				else sum([x.numel()*x.element_size() for x in v.values()])) \
@@ -59,8 +62,8 @@ class Buffer():
 		total_bytes = bytes_per_step*self._capacity
 		print(f'Storage required: {total_bytes/1e9:.2f} GB')
 		# Heuristic: decide whether to use CUDA or CPU memory
-		storage_device = 'cuda:0' if 2.5*total_bytes < mem_free else 'cpu'
-		print(f'Using {storage_device.upper()} memory for storage.')
+		storage_device = self._device if (self._device.type == 'cuda' and 2.5*total_bytes < mem_free) else torch.device('cpu')
+		print(f'Using {str(storage_device).upper()} memory for storage.')
 		self._storage_device = torch.device(storage_device)
 		return self._reserve_buffer(
 			LazyTensorStorage(self._capacity, device=self._storage_device)
