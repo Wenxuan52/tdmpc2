@@ -6,11 +6,24 @@ os.environ['TORCHDYNAMO_INLINE_INBUILT_NN_MODULES'] = "1"
 os.environ['TORCH_LOGS'] = "+recompiles"
 import warnings
 warnings.filterwarnings('ignore')
+import sys
+from pathlib import Path
 import torch
 import torch.distributed as dist
 
 import hydra
 from termcolor import colored
+
+# When launched as `python train.py` from inside the package directory
+# (`.../tdmpc2/tdmpc2`), sibling file `tdmpc2.py` can shadow the package name
+# `tdmpc2`. Ensure repository root is importable first.
+_THIS_FILE = Path(__file__).resolve()
+_PKG_DIR = _THIS_FILE.parent
+_REPO_ROOT = _PKG_DIR.parent
+if str(_REPO_ROOT) not in sys.path:
+	sys.path.insert(0, str(_REPO_ROOT))
+if str(_PKG_DIR) in sys.path:
+	sys.path.remove(str(_PKG_DIR))
 
 from tdmpc2.common.parser import parse_cfg
 from tdmpc2.common.seed import set_seed

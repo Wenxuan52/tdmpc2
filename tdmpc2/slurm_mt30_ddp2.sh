@@ -28,13 +28,14 @@ export WANDB_MODE=online
 source /scratch_tide/wy524/miniconda3/etc/profile.d/conda.sh
 conda activate tdmpc2
 
-cd /scratch_tide/wy524/tdmpc2/tdmpc2/
+cd /scratch_tide/wy524/tdmpc2/
 
 # Resolve rank/world env vars from torchrun.
 export OMP_NUM_THREADS=8
 
-torchrun --standalone --nproc_per_node=2 train.py \
+torchrun --standalone --nproc_per_node=2 -m tdmpc2.train \
   --config-name DDP_config \
+  --config-path tdmpc2 \
   task=mt30 \
   model_size=19 \
   batch_size=1024 \
