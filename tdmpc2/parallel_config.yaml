@@ -15,7 +15,7 @@ diffusion_eval_compile_mode: reduce-overhead
 eval_freq: 0
 save_model_every: 0
 save_replay: true
-replay_save_dir: ./replays
+replay_save_dir: /media/datasets/cheliu21/cxy_worldmodel/replay
 replay_flush_every_episodes: 1000
 replay_include_terminated: false
 save_reward_csv: true
@@ -26,4 +26,6 @@ exp_name: parallel-online-diffusion
 save_agent: true
 save_video: false
 enable_wandb: false
-common_overrides: []
+common_overrides:
+  - online_save_root=/media/datasets/cheliu21/cxy_worldmodel/online_checkpoint
+  - reward_csv_dir=/media/datasets/cheliu21/cxy_worldmodel/online_csv
