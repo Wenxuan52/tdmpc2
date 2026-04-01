@@ -1,6 +1,6 @@
 import gymnasium as gym
 import numpy as np
-from envs.wrappers.timeout import Timeout
+from tdmpc2.envs.wrappers.timeout import Timeout
 
 import mani_skill2.envs
 
