@@ -5,11 +5,20 @@ Run:
 """
 
 import tempfile
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 import torch.distributed as dist
 
-from train import _init_distributed, _cleanup_distributed
+# Make imports robust when run as:
+# - python tdmpc2/tests/ddp_init_smoke.py  (repo root)
+# - cd tdmpc2 && python tests/ddp_init_smoke.py
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from tdmpc2.train import _init_distributed, _cleanup_distributed
 
 
 def test_single_process_no_ddp():
