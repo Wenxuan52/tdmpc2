@@ -35,14 +35,18 @@ def test_single_process_no_ddp():
 
 
 def test_single_process_ddp_gloo_file_init():
-    with tempfile.NamedTemporaryFile() as tmp:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        rendezvous_path = Path(tmp_dir) / 'ddp_init_rendezvous'
+        # `file://` init requires a path. Some torch backends may create/remove
+        # this file during rendezvous, so avoid NamedTemporaryFile auto-cleanup.
+        rendezvous_path.touch(exist_ok=True)
         cfg = SimpleNamespace(
             use_ddp=True,
             world_size=1,
             global_rank=0,
             local_rank=0,
             distributed_backend='gloo',
-            distributed_init_method=f'file://{tmp.name}',
+            distributed_init_method=f'file://{rendezvous_path}',
             distributed_timeout_sec=30,
             device='cpu',
         )
@@ -51,6 +55,7 @@ def test_single_process_ddp_gloo_file_init():
         assert dist.is_initialized()
         _cleanup_distributed()
         assert not dist.is_initialized()
+        rendezvous_path.unlink(missing_ok=True)
 
 
 if __name__ == '__main__':
