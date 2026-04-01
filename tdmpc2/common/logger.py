@@ -107,14 +107,30 @@ class Logger:
 	"""Primary logging object. Logs either locally or using wandb."""
 
 	def __init__(self, cfg):
-		self._log_dir = make_dir(cfg.work_dir)
-		model_root = self._log_dir if getattr(cfg, 'multitask', False) else self._log_dir / "models"
-		self._model_dir = make_dir(model_root)
-		self._save_csv = cfg.save_csv
-		self._save_agent = cfg.save_agent
+		self._rank = int(getattr(cfg, 'global_rank', 0) or 0)
+		self._rank0_logging_only = bool(getattr(cfg, 'rank0_logging_only', True))
+		self._enabled = (not self._rank0_logging_only) or self._rank == 0
+		self._log_dir = cfg.work_dir
+		self._model_dir = cfg.work_dir / "models"
+		self._save_csv = bool(cfg.save_csv)
+		self._save_agent = bool(cfg.save_agent)
 		self._group = cfg_to_group(cfg)
 		self._seed = cfg.seed
 		self._eval = []
+		self._wandb = None
+		self._video = None
+		if not self._enabled:
+			self._save_csv = False
+			self._save_agent = False
+			cfg.save_agent = False
+			cfg.save_video = False
+			cfg.enable_wandb = False
+			print(colored(f"Rank {self._rank}: logger/wandb/checkpoint disabled (rank0_logging_only=true).", "blue", attrs=["bold"]))
+			return
+
+		self._log_dir = make_dir(cfg.work_dir)
+		model_root = self._log_dir if getattr(cfg, 'multitask', False) else self._log_dir / "models"
+		self._model_dir = make_dir(model_root)
 		print_run(cfg)
 		self.project = cfg.get("wandb_project", "none")
 		self.entity = cfg.get("wandb_entity", "none")
@@ -154,6 +170,8 @@ class Logger:
 		return self._model_dir
 
 	def save_agent(self, agent=None, identifier='final'):
+		if not self._enabled:
+			return
 		if self._save_agent and agent:
 			fp = self._model_dir / f'{str(identifier)}.pt'
 			agent.save(fp)
@@ -166,6 +184,8 @@ class Logger:
 				self._wandb.log_artifact(artifact)
 
 	def finish(self, agent=None):
+		if not self._enabled:
+			return
 		try:
 			self.save_agent(agent)
 		except Exception as e:
@@ -223,6 +243,8 @@ class Logger:
 			print(colored(f'  {"metaworld":<22}\tS: {metaworld_success:.02f}', 'yellow', attrs=['bold']))
 
 	def log(self, d, category="train"):
+		if not self._enabled:
+			return
 		assert category in CAT_TO_COLOR.keys(), f"invalid category: {category}"
 		if self._wandb:
 			if category in {"train", "eval"}:
