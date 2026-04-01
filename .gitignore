@@ -2,6 +2,7 @@
 *.out
 scripts/
 tdmpc2_data/
+outputs/
 
 # Logging
 tdmpc2/logs/
