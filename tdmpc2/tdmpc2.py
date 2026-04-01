@@ -34,7 +34,7 @@ class TDMPC2(torch.nn.Module):
 		if self._ddp_enabled:
 			local_rank = int(getattr(cfg, 'local_rank', os.environ.get('LOCAL_RANK', 0)))
 			ddp_kwargs = {
-				'find_unused_parameters': bool(getattr(cfg, 'ddp_find_unused_parameters', False)),
+				'find_unused_parameters': bool(getattr(cfg, 'ddp_find_unused_parameters', True)),
 				'broadcast_buffers': bool(getattr(cfg, 'ddp_broadcast_buffers', False)),
 				'gradient_as_bucket_view': bool(getattr(cfg, 'ddp_gradient_as_bucket_view', True)),
 			}
