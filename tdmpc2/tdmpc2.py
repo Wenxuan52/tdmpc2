@@ -2,6 +2,8 @@ import os
 
 import torch
 import torch.nn.functional as F
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from tdmpc2.common import math
 from tdmpc2.common.scale import RunningScale
@@ -23,18 +25,39 @@ class TDMPC2(torch.nn.Module):
 		self.cfg = cfg
 		default_device = f'cuda:{int(os.environ.get("LOCAL_RANK", 0))}' if torch.cuda.is_available() else 'cpu'
 		self.device = torch.device(str(getattr(cfg, 'device', default_device)))
-		self.model = WorldModel(cfg).to(self.device)
+		base_model = WorldModel(cfg).to(self.device)
+		def _dispatch_forward(call_name, *args, **kwargs):
+			return getattr(base_model, call_name)(*args, **kwargs)
+		base_model.forward = _dispatch_forward
+		self.model = base_model
+		self._ddp_enabled = bool(getattr(cfg, 'use_ddp', False)) and dist.is_available() and dist.is_initialized()
+		self._use_native_ddp_wrapper = self._ddp_enabled and bool(getattr(cfg, 'ddp_use_native_wrapper', False))
+		if self._use_native_ddp_wrapper:
+			local_rank = int(getattr(cfg, 'local_rank', os.environ.get('LOCAL_RANK', 0)))
+			ddp_kwargs = {
+				'find_unused_parameters': bool(getattr(cfg, 'ddp_find_unused_parameters', True)),
+				'broadcast_buffers': bool(getattr(cfg, 'ddp_broadcast_buffers', False)),
+				'gradient_as_bucket_view': bool(getattr(cfg, 'ddp_gradient_as_bucket_view', True)),
+			}
+			if self.device.type == 'cuda':
+				ddp_kwargs['device_ids'] = [local_rank]
+				ddp_kwargs['output_device'] = local_rank
+			self.model = DDP(base_model, **ddp_kwargs)
+			if bool(getattr(cfg, 'ddp_static_graph', False)):
+				self.model._set_static_graph()
+
+		model_for_optim = self._raw_model
 		self.optim = torch.optim.Adam([
-			{'params': self.model._encoder.parameters(), 'lr': self.cfg.lr*self.cfg.enc_lr_scale},
-			{'params': self.model._dynamics.parameters()},
-			{'params': self.model._reward.parameters()},
-			{'params': self.model._termination.parameters() if self.cfg.episodic else []},
-			{'params': self.model._F.parameters()},
-			{'params': self.model._Qs.parameters()},
-			{'params': self.model._task_emb.parameters() if self.cfg.multitask else []
+			{'params': model_for_optim._encoder.parameters(), 'lr': self.cfg.lr*self.cfg.enc_lr_scale},
+			{'params': model_for_optim._dynamics.parameters()},
+			{'params': model_for_optim._reward.parameters()},
+			{'params': model_for_optim._termination.parameters() if self.cfg.episodic else []},
+			{'params': model_for_optim._F.parameters()},
+			{'params': model_for_optim._Qs.parameters()},
+			{'params': model_for_optim._task_emb.parameters() if self.cfg.multitask else []
 			 }
 		], lr=self.cfg.lr, capturable=True)
-		self.pi_optim = torch.optim.Adam(self.model._pi.parameters(), lr=self.cfg.lr, eps=1e-5, capturable=True)
+		self.pi_optim = torch.optim.Adam(model_for_optim._pi.parameters(), lr=self.cfg.lr, eps=1e-5, capturable=True)
 		self.model.eval()
 		self.scale = RunningScale(cfg)
 		self.cfg.iterations += 2*int(cfg.action_dim >= 20) # Heuristic for large action spaces
@@ -56,6 +79,27 @@ class TDMPC2(torch.nn.Module):
 		if cfg.compile:
 			print(f'Compiling update core with torch.compile (mode={self._compile_mode})...')
 			self._compiled_update_core = torch.compile(self._update_core, mode=self._compile_mode)
+
+	@property
+	def _raw_model(self):
+		return self.model.module if isinstance(self.model, DDP) else self.model
+
+	def _model_call(self, call_name, *args, **kwargs):
+		if isinstance(self.model, DDP):
+			return self.model(call_name, *args, **kwargs)
+		return getattr(self.model, call_name)(*args, **kwargs)
+
+	def _sync_gradients(self, params):
+		if not self._ddp_enabled:
+			return
+		world_size = dist.get_world_size()
+		if world_size <= 1:
+			return
+		for p in params:
+			if p.grad is None:
+				continue
+			dist.all_reduce(p.grad, op=dist.ReduceOp.SUM)
+			p.grad.div_(world_size)
 
 	@property
 	def plan(self):
@@ -97,7 +141,7 @@ class TDMPC2(torch.nn.Module):
 		Args:
 			fp (str): Filepath to save state dict to.
 		"""
-		torch.save({"model": self.model.state_dict()}, fp)
+		torch.save({"model": self._raw_model.state_dict()}, fp)
 
 	def load(self, fp):
 		"""
@@ -111,8 +155,8 @@ class TDMPC2(torch.nn.Module):
 		else:
 			state_dict = torch.load(fp, map_location=torch.get_default_device(), weights_only=False)
 		state_dict = state_dict["model"] if "model" in state_dict else state_dict
-		state_dict = api_model_conversion(self.model.state_dict(), state_dict)
-		missing_keys, unexpected_keys = self.model.load_state_dict(state_dict, strict=False)
+		state_dict = api_model_conversion(self._raw_model.state_dict(), state_dict)
+		missing_keys, unexpected_keys = self._raw_model.load_state_dict(state_dict, strict=False)
 
 		# Backward compatibility: `_G` was removed from the world model.
 		allowed_missing_g_keys = tuple(key for key in missing_keys if key.startswith('_G.'))
@@ -155,8 +199,8 @@ class TDMPC2(torch.nn.Module):
 			task = torch.tensor([task], device=self.device)
 		if self.cfg.mpc:
 			return self.plan(obs, t0=t0, eval_mode=eval_mode, task=task).cpu()
-		z = self.model.encode(obs, task)
-		action, info = self.model.pi(z, task)
+		z = self._model_call("encode", obs, task)
+		action, info = self._model_call("pi", z, task)
 		if eval_mode:
 			action = info["mean"]
 		return action[0].cpu()
@@ -168,18 +212,18 @@ class TDMPC2(torch.nn.Module):
 		num_samples = actions.shape[1]
 		termination = torch.zeros(num_samples, 1, dtype=torch.float32, device=z.device)
 		for t in range(self.cfg.horizon):
-			reward = math.two_hot_inv(self.model.reward(z, actions[t], task), self.cfg)
-			f_score = self.model.F(z, actions[t], task)
+			reward = math.two_hot_inv(self._model_call("reward", z, actions[t], task), self.cfg)
+			f_score = self._model_call("F", z, actions[t], task)
 			f_norm = self._normalize_contrastive_score(f_score)
 			shaped_reward = reward + self._contrastive_beta * f_norm
-			z = self.model.next(z, actions[t], task)
+			z = self._model_call("next", z, actions[t], task)
 			G = G + discount * (1-termination) * shaped_reward
 			discount_update = self.discount[torch.tensor(task)] if self.cfg.multitask else self.discount
 			discount = discount * discount_update
 			if self.cfg.episodic:
-				termination = torch.clip(termination + (self.model.termination(z, task) > 0.5).float(), max=1.)
-		action, _ = self.model.pi(z, task)
-		return G + discount * (1-termination) * self.model.Q(z, action, task, return_type='avg')
+				termination = torch.clip(termination + (self._model_call("termination", z, task) > 0.5).float(), max=1.)
+		action, _ = self._model_call("pi", z, task)
+		return G + discount * (1-termination) * self._model_call("Q", z, action, task, return_type='avg')
 
 	def _normalize_contrastive_score(self, score):
 		std = torch.clamp(self._contrastive_std, min=1e-6)
@@ -204,16 +248,16 @@ class TDMPC2(torch.nn.Module):
 		if task is not None:
 			task_flat = task.long().reshape(-1).repeat_interleave(self.cfg.horizon)
 
-		pos_logits = self.model.F(z_flat, a_pos, task_flat)
+		pos_logits = self._model_call("F", z_flat, a_pos, task_flat)
 		labels_pos = torch.ones_like(pos_logits)
 
 		with torch.no_grad():
-			pi_action, _ = self.model.pi(z_flat, task_flat)
+			pi_action, _ = self._model_call("pi", z_flat, task_flat)
 			noise_scale = float(getattr(self.cfg, 'contrastive_neg_noise', 0.5))
 			noisy_action = (pi_action + noise_scale * torch.randn_like(pi_action)).clamp(-1, 1)
 			random_action = (2.0 * torch.rand_like(pi_action) - 1.0).clamp(-1, 1)
 			candidate_actions = torch.stack([pi_action, noisy_action, random_action], dim=1)
-			candidate_logits = self.model.F(
+			candidate_logits = self._model_call("F", 
 				z_flat.unsqueeze(1).expand(-1, candidate_actions.shape[1], -1).reshape(-1, z_flat.shape[-1]),
 				candidate_actions.reshape(-1, candidate_actions.shape[-1]),
 				task_flat.repeat_interleave(candidate_actions.shape[1]) if task_flat is not None else None,
@@ -221,7 +265,7 @@ class TDMPC2(torch.nn.Module):
 			hard_idx = candidate_logits.argmax(dim=1)
 			hard_neg = candidate_actions[torch.arange(candidate_actions.shape[0], device=hard_idx.device), hard_idx]
 
-		neg_logits = self.model.F(z_flat, hard_neg, task_flat)
+		neg_logits = self._model_call("F", z_flat, hard_neg, task_flat)
 		labels_neg = torch.zeros_like(neg_logits)
 
 		loss_pos = F.binary_cross_entropy_with_logits(pos_logits, labels_pos)
@@ -244,14 +288,14 @@ class TDMPC2(torch.nn.Module):
 			torch.Tensor: Action to take in the environment.
 		"""
 		# Sample policy trajectories
-		z = self.model.encode(obs, task)
+		z = self._model_call("encode", obs, task)
 		if self.cfg.num_pi_trajs > 0:
 			pi_actions = torch.empty(self.cfg.horizon, self.cfg.num_pi_trajs, self.cfg.action_dim, device=self.device)
 			_z = z.repeat(self.cfg.num_pi_trajs, 1)
 			for t in range(self.cfg.horizon-1):
-				pi_actions[t], _ = self.model.pi(_z, task)
-				_z = self.model.next(_z, pi_actions[t], task)
-			pi_actions[-1], _ = self.model.pi(_z, task)
+				pi_actions[t], _ = self._model_call("pi", _z, task)
+				_z = self._model_call("next", _z, pi_actions[t], task)
+			pi_actions[-1], _ = self._model_call("pi", _z, task)
 
 		# Initialize state and parameters
 		z = z.repeat(self.cfg.num_samples, 1)
@@ -272,7 +316,7 @@ class TDMPC2(torch.nn.Module):
 			actions_sample = actions_sample.clamp(-1, 1)
 			actions[:, self.cfg.num_pi_trajs:] = actions_sample
 			if self.cfg.multitask:
-				actions = actions * self.model._action_masks[task]
+				actions = actions * self._raw_model._action_masks[task]
 
 			# Compute elite actions
 			value = self._estimate_value(z, actions, task).nan_to_num(0)
@@ -287,8 +331,8 @@ class TDMPC2(torch.nn.Module):
 			std = ((score.unsqueeze(0) * (elite_actions - mean.unsqueeze(1)) ** 2).sum(dim=1) / (score.sum(0) + 1e-9)).sqrt()
 			std = std.clamp(self.cfg.min_std, self.cfg.max_std)
 			if self.cfg.multitask:
-				mean = mean * self.model._action_masks[task]
-				std = std * self.model._action_masks[task]
+				mean = mean * self._raw_model._action_masks[task]
+				std = std * self._raw_model._action_masks[task]
 
 		# Select action
 		rand_idx = math.gumbel_softmax_sample(score.squeeze(1))
@@ -310,8 +354,8 @@ class TDMPC2(torch.nn.Module):
 		Returns:
 			float: Loss of the policy update.
 		"""
-		action, info = self.model.pi(zs, task)
-		qs = self.model.Q(zs, action, task, return_type='avg', detach=True)
+		action, info = self._model_call("pi", zs, task)
+		qs = self._model_call("Q", zs, action, task, return_type='avg', detach=True)
 		self.scale.update(qs[0])
 		qs = self.scale(qs)
 
@@ -319,7 +363,9 @@ class TDMPC2(torch.nn.Module):
 		rho = torch.pow(self.cfg.rho, torch.arange(len(qs), device=self.device))
 		pi_loss = (-(self.cfg.entropy_coef * info["scaled_entropy"] + qs).mean(dim=(1,2)) * rho).mean()
 		pi_loss.backward()
-		pi_grad_norm = torch.nn.utils.clip_grad_norm_(self.model._pi.parameters(), self.cfg.grad_clip_norm)
+		if not self._use_native_ddp_wrapper:
+			self._sync_gradients(self._raw_model._pi.parameters())
+		pi_grad_norm = torch.nn.utils.clip_grad_norm_(self._raw_model._pi.parameters(), self.cfg.grad_clip_norm)
 		self.pi_optim.step()
 		self.pi_optim.zero_grad(set_to_none=True)
 
@@ -346,30 +392,30 @@ class TDMPC2(torch.nn.Module):
 		Returns:
 			torch.Tensor: TD-target.
 		"""
-		action, _ = self.model.pi(next_z, task)
+		action, _ = self._model_call("pi", next_z, task)
 		discount = self.discount[task].unsqueeze(-1) if self.cfg.multitask else self.discount
-		target_qs = self.model.Q(next_z, action, task, return_type='all', target=True)
+		target_qs = self._model_call("Q", next_z, action, task, return_type='all', target=True)
 		target_q = math.two_hot_inv(target_qs[:2], self.cfg).min(0).values
 		return reward + discount * (1-terminated) * target_q
 
 	def _update_core(self, obs, action, reward, terminated, task=None):
 		with torch.no_grad():
-			next_z = self.model.encode(obs[1:], task)
+			next_z = self._model_call("encode", obs[1:], task)
 			td_targets = self._td_target(next_z, reward, terminated, task)
 
 		zs = torch.empty(self.cfg.horizon+1, self.cfg.batch_size, self.cfg.latent_dim, device=self.device)
-		z = self.model.encode(obs[0], task)
+		z = self._model_call("encode", obs[0], task)
 		zs[0] = z
 		consistency_loss = 0
 		for t, (_action, _next_z) in enumerate(zip(action.unbind(0), next_z.unbind(0))):
-			z = self.model.next(z, _action, task)
+			z = self._model_call("next", z, _action, task)
 			consistency_loss = consistency_loss + F.mse_loss(z, _next_z) * self.cfg.rho**t
 			zs[t+1] = z
 
 		_zs = zs[:-1]
-		qs = self.model.Q(_zs, action, task, return_type='all')
-		reward_preds = self.model.reward(_zs, action, task)
-		termination_pred = self.model.termination(zs[1:], task, unnormalized=True) if self.cfg.episodic else None
+		qs = self._model_call("Q", _zs, action, task, return_type='all')
+		reward_preds = self._model_call("reward", _zs, action, task)
+		termination_pred = self._model_call("termination", zs[1:], task, unnormalized=True) if self.cfg.episodic else None
 
 		reward_loss, value_loss = 0, 0
 		contrastive_loss = self._contrastive_loss(_zs, action, task)
@@ -399,6 +445,8 @@ class TDMPC2(torch.nn.Module):
 
 		# Update model
 		total_loss.backward()
+		if not self._use_native_ddp_wrapper:
+			self._sync_gradients(self._raw_model.parameters())
 		grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_clip_norm)
 		self.optim.step()
 		self.optim.zero_grad(set_to_none=True)
@@ -407,7 +455,7 @@ class TDMPC2(torch.nn.Module):
 		pi_info = self.update_pi(zs.detach(), task)
 
 		# Update target Q-functions
-		self.model.soft_update_target_Q()
+		self._model_call("soft_update_target_Q")
 
 		# Return training statistics
 		self.model.eval()
