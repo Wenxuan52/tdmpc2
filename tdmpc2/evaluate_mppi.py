@@ -11,8 +11,8 @@ import hydra
 import numpy as np
 from termcolor import colored
 
-from common.parser import parse_cfg
-from common.seed import set_seed
+from tdmpc2.common.parser import parse_cfg
+from tdmpc2.common.seed import set_seed
 
 
 class ConfigNamespace(SimpleNamespace):
@@ -117,8 +117,8 @@ def _evaluate_worker(payload):
 	os.environ['MUJOCO_GL'] = os.getenv('MUJOCO_GL', 'egl')
 
 	import torch
-	from envs import make_env
-	from tdmpc2 import TDMPC2
+	from tdmpc2.envs import make_env
+	from tdmpc2.tdmpc2 import TDMPC2
 
 	torch.backends.cudnn.benchmark = True
 	torch.set_float32_matmul_precision('high')
