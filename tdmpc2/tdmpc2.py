@@ -35,7 +35,7 @@ class TDMPC2(torch.nn.Module):
 				'broadcast_buffers': bool(getattr(cfg, 'ddp_broadcast_buffers', False)),
 				'gradient_as_bucket_view': bool(getattr(cfg, 'ddp_gradient_as_bucket_view', True)),
 			}
-			if torch.cuda.is_available():
+			if self.device.type == 'cuda':
 				ddp_kwargs['device_ids'] = [local_rank]
 				ddp_kwargs['output_device'] = local_rank
 			self.model = DDP(base_model, **ddp_kwargs)
