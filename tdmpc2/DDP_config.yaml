@@ -22,3 +22,11 @@ ddp_gradient_as_bucket_view: true
 offline_shard_dataset_by_rank: false
 offline_sync_eval: false
 offline_eval_rank0_only: true
+
+# Rank-aware logging/checkpoint/wandb knobs
+rank0_logging_only: true
+
+# Compile strategy for DDP runs:
+# - off: force compile=false when WORLD_SIZE > 1 (recommended for initial validation)
+# - on: keep user-provided compile flag
+ddp_compile_strategy: off
