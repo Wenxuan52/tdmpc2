@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn.functional as F
 
@@ -19,7 +21,8 @@ class TDMPC2(torch.nn.Module):
 	def __init__(self, cfg):
 		super().__init__()
 		self.cfg = cfg
-		self.device = torch.device('cuda:0')
+		default_device = f'cuda:{int(os.environ.get("LOCAL_RANK", 0))}' if torch.cuda.is_available() else 'cpu'
+		self.device = torch.device(str(getattr(cfg, 'device', default_device)))
 		self.model = WorldModel(cfg).to(self.device)
 		self.optim = torch.optim.Adam([
 			{'params': self.model._encoder.parameters(), 'lr': self.cfg.lr*self.cfg.enc_lr_scale},
@@ -43,7 +46,7 @@ class TDMPC2(torch.nn.Module):
 		self.register_buffer("_contrastive_mean", torch.zeros(1, device=self.device))
 		self.register_buffer("_contrastive_std", torch.ones(1, device=self.device))
 		self.discount = torch.tensor(
-			[self._get_discount(ep_len) for ep_len in cfg.episode_lengths], device='cuda:0'
+			[self._get_discount(ep_len) for ep_len in cfg.episode_lengths], device=self.device
 		) if self.cfg.multitask else self._get_discount(cfg.episode_length)
 		print('Episode length:', cfg.episode_length)
 		print('Discount factor:', self.discount)

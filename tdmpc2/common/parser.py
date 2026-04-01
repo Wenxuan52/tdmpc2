@@ -1,9 +1,11 @@
 import dataclasses
+import os
 import re
 from pathlib import Path
 from typing import Any
 
 import hydra
+import torch
 from omegaconf import OmegaConf
 
 from common import MODEL_SIZE, TASK_SET
@@ -54,6 +56,19 @@ def parse_cfg(cfg: OmegaConf) -> OmegaConf:
 			pass
 
 	# Convenience
+	local_rank = int(os.environ.get('LOCAL_RANK', cfg.get('local_rank', 0) or 0))
+	global_rank = int(os.environ.get('RANK', cfg.get('global_rank', 0) or 0))
+	world_size = int(os.environ.get('WORLD_SIZE', cfg.get('world_size', 1) or 1))
+	cfg.local_rank = local_rank
+	cfg.global_rank = global_rank
+	cfg.world_size = world_size
+	cfg.use_ddp = bool(cfg.get('use_ddp', False))
+	if torch.cuda.is_available():
+		default_device = f'cuda:{local_rank}'
+	else:
+		default_device = 'cpu'
+	cfg.device = str(cfg.get('device', default_device) or default_device)
+
 	cfg.task_title = cfg.task.replace("-", " ").title()
 	cfg.bin_size = (cfg.vmax - cfg.vmin) / (cfg.num_bins-1) # Bin size for discrete regression
 	cfg.multitask = cfg.task in TASK_SET.keys()
