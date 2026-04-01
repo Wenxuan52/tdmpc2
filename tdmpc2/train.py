@@ -12,14 +12,24 @@ import torch.distributed as dist
 import hydra
 from termcolor import colored
 
-from common.parser import parse_cfg
-from common.seed import set_seed
-from common.buffer import Buffer
-from envs import make_env
-from tdmpc2 import TDMPC2
-from trainer.offline_trainer import OfflineTrainer
-from trainer.online_trainer import OnlineTrainer
-from common.logger import Logger
+try:  # script mode: python train.py (cwd=tdmpc2/)
+	from common.parser import parse_cfg
+	from common.seed import set_seed
+	from common.buffer import Buffer
+	from envs import make_env
+	from tdmpc2 import TDMPC2
+	from trainer.offline_trainer import OfflineTrainer
+	from trainer.online_trainer import OnlineTrainer
+	from common.logger import Logger
+except ModuleNotFoundError:  # package mode: import tdmpc2.train
+	from tdmpc2.common.parser import parse_cfg
+	from tdmpc2.common.seed import set_seed
+	from tdmpc2.common.buffer import Buffer
+	from tdmpc2.envs import make_env
+	from tdmpc2.tdmpc2 import TDMPC2
+	from tdmpc2.trainer.offline_trainer import OfflineTrainer
+	from tdmpc2.trainer.online_trainer import OnlineTrainer
+	from tdmpc2.common.logger import Logger
 
 torch.backends.cudnn.benchmark = True
 torch.set_float32_matmul_precision('high')
