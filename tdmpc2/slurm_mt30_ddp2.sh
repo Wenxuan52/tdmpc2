@@ -35,7 +35,6 @@ export OMP_NUM_THREADS=8
 
 torchrun --standalone --nproc_per_node=2 -m tdmpc2.train \
   --config-name DDP_config \
-  --config-path tdmpc2 \
   task=mt30 \
   model_size=19 \
   batch_size=1024 \
