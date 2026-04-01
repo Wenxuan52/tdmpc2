@@ -5,8 +5,8 @@ from pathlib import Path
 import numpy as np
 import torch
 from tensordict.tensordict import TensorDict
-from common.replay_buffer_saver import ReplayBufferSaver
-from trainer.base import Trainer
+from tdmpc2.common.replay_buffer_saver import ReplayBufferSaver
+from tdmpc2.trainer.base import Trainer
 
 
 class OnlineTrainer(Trainer):

@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 from termcolor import colored
 
-from common import TASK_SET
+from tdmpc2.common import TASK_SET
 
 
 CONSOLE_FORMAT = [

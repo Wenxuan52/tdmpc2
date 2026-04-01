@@ -12,8 +12,8 @@ from pathlib import Path
 
 from omegaconf import OmegaConf
 
-from common import TASK_SET
-from common.replay_buffer_saver import merge_seed_replay_chunks
+from tdmpc2.common import TASK_SET
+from tdmpc2.common.replay_buffer_saver import merge_seed_replay_chunks
 
 
 def _resolve_tasks(cfg) -> list[str]:

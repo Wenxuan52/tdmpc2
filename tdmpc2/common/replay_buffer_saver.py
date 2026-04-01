@@ -8,7 +8,7 @@ from typing import Iterable
 import torch
 from tensordict import TensorDict
 
-from common import TASK_SET
+from tdmpc2.common import TASK_SET
 
 
 def _infer_task_id(task_name: str, replay_task_id: int) -> int:
