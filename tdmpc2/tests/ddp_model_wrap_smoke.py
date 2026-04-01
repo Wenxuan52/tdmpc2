@@ -39,6 +39,9 @@ class _DummyWorldModel(nn.Module):
 	def eval(self):
 		return super().eval()
 
+	def encode(self, obs, task=None):
+		return self._encoder(obs)
+
 
 def _build_cfg():
 	return SimpleNamespace(
@@ -88,6 +91,9 @@ def test_ddp_model_wrap():
 				assert isinstance(agent.model, DDP)
 				assert isinstance(agent._raw_model, _DummyWorldModel)
 				assert agent.pi_optim.param_groups[0]['params'][0] is agent._raw_model._pi.weight
+				obs = torch.zeros(1, 4)
+				z = agent._model_call("encode", obs, None)
+				assert z.shape == (1, 4)
 		finally:
 			dist.destroy_process_group()
 			rendezvous_path.unlink(missing_ok=True)
