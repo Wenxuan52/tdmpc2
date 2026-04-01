@@ -2,6 +2,8 @@ import os
 
 import torch
 import torch.nn.functional as F
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
 
 from tdmpc2.common import math
 from tdmpc2.common.scale import RunningScale
@@ -23,18 +25,35 @@ class TDMPC2(torch.nn.Module):
 		self.cfg = cfg
 		default_device = f'cuda:{int(os.environ.get("LOCAL_RANK", 0))}' if torch.cuda.is_available() else 'cpu'
 		self.device = torch.device(str(getattr(cfg, 'device', default_device)))
-		self.model = WorldModel(cfg).to(self.device)
+		base_model = WorldModel(cfg).to(self.device)
+		self.model = base_model
+		self._ddp_enabled = bool(getattr(cfg, 'use_ddp', False)) and dist.is_available() and dist.is_initialized()
+		if self._ddp_enabled:
+			local_rank = int(getattr(cfg, 'local_rank', os.environ.get('LOCAL_RANK', 0)))
+			ddp_kwargs = {
+				'find_unused_parameters': bool(getattr(cfg, 'ddp_find_unused_parameters', False)),
+				'broadcast_buffers': bool(getattr(cfg, 'ddp_broadcast_buffers', False)),
+				'gradient_as_bucket_view': bool(getattr(cfg, 'ddp_gradient_as_bucket_view', True)),
+			}
+			if torch.cuda.is_available():
+				ddp_kwargs['device_ids'] = [local_rank]
+				ddp_kwargs['output_device'] = local_rank
+			self.model = DDP(base_model, **ddp_kwargs)
+			if bool(getattr(cfg, 'ddp_static_graph', False)):
+				self.model._set_static_graph()
+
+		model_for_optim = self._raw_model
 		self.optim = torch.optim.Adam([
-			{'params': self.model._encoder.parameters(), 'lr': self.cfg.lr*self.cfg.enc_lr_scale},
-			{'params': self.model._dynamics.parameters()},
-			{'params': self.model._reward.parameters()},
-			{'params': self.model._termination.parameters() if self.cfg.episodic else []},
-			{'params': self.model._F.parameters()},
-			{'params': self.model._Qs.parameters()},
-			{'params': self.model._task_emb.parameters() if self.cfg.multitask else []
+			{'params': model_for_optim._encoder.parameters(), 'lr': self.cfg.lr*self.cfg.enc_lr_scale},
+			{'params': model_for_optim._dynamics.parameters()},
+			{'params': model_for_optim._reward.parameters()},
+			{'params': model_for_optim._termination.parameters() if self.cfg.episodic else []},
+			{'params': model_for_optim._F.parameters()},
+			{'params': model_for_optim._Qs.parameters()},
+			{'params': model_for_optim._task_emb.parameters() if self.cfg.multitask else []
 			 }
 		], lr=self.cfg.lr, capturable=True)
-		self.pi_optim = torch.optim.Adam(self.model._pi.parameters(), lr=self.cfg.lr, eps=1e-5, capturable=True)
+		self.pi_optim = torch.optim.Adam(model_for_optim._pi.parameters(), lr=self.cfg.lr, eps=1e-5, capturable=True)
 		self.model.eval()
 		self.scale = RunningScale(cfg)
 		self.cfg.iterations += 2*int(cfg.action_dim >= 20) # Heuristic for large action spaces
@@ -56,6 +75,10 @@ class TDMPC2(torch.nn.Module):
 		if cfg.compile:
 			print(f'Compiling update core with torch.compile (mode={self._compile_mode})...')
 			self._compiled_update_core = torch.compile(self._update_core, mode=self._compile_mode)
+
+	@property
+	def _raw_model(self):
+		return self.model.module if isinstance(self.model, DDP) else self.model
 
 	@property
 	def plan(self):
@@ -97,7 +120,7 @@ class TDMPC2(torch.nn.Module):
 		Args:
 			fp (str): Filepath to save state dict to.
 		"""
-		torch.save({"model": self.model.state_dict()}, fp)
+		torch.save({"model": self._raw_model.state_dict()}, fp)
 
 	def load(self, fp):
 		"""
@@ -111,8 +134,8 @@ class TDMPC2(torch.nn.Module):
 		else:
 			state_dict = torch.load(fp, map_location=torch.get_default_device(), weights_only=False)
 		state_dict = state_dict["model"] if "model" in state_dict else state_dict
-		state_dict = api_model_conversion(self.model.state_dict(), state_dict)
-		missing_keys, unexpected_keys = self.model.load_state_dict(state_dict, strict=False)
+		state_dict = api_model_conversion(self._raw_model.state_dict(), state_dict)
+		missing_keys, unexpected_keys = self._raw_model.load_state_dict(state_dict, strict=False)
 
 		# Backward compatibility: `_G` was removed from the world model.
 		allowed_missing_g_keys = tuple(key for key in missing_keys if key.startswith('_G.'))
@@ -319,7 +342,7 @@ class TDMPC2(torch.nn.Module):
 		rho = torch.pow(self.cfg.rho, torch.arange(len(qs), device=self.device))
 		pi_loss = (-(self.cfg.entropy_coef * info["scaled_entropy"] + qs).mean(dim=(1,2)) * rho).mean()
 		pi_loss.backward()
-		pi_grad_norm = torch.nn.utils.clip_grad_norm_(self.model._pi.parameters(), self.cfg.grad_clip_norm)
+		pi_grad_norm = torch.nn.utils.clip_grad_norm_(self._raw_model._pi.parameters(), self.cfg.grad_clip_norm)
 		self.pi_optim.step()
 		self.pi_optim.zero_grad(set_to_none=True)
 
