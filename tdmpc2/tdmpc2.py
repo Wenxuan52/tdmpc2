@@ -99,6 +99,8 @@ class TDMPC2(torch.nn.Module):
 		return getattr(self.model, call_name)(*args, **kwargs)
 
 	def _sync_gradients(self, params):
+		# Kept for backward compatibility in non-native distributed setups.
+		# Native DDP wrapper is enforced when distributed is enabled.
 		if not self._ddp_enabled:
 			return
 		world_size = dist.get_world_size()
