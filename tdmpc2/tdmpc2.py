@@ -31,7 +31,16 @@ class TDMPC2(torch.nn.Module):
 		base_model.forward = _dispatch_forward
 		self.model = base_model
 		self._ddp_enabled = bool(getattr(cfg, 'use_ddp', False)) and dist.is_available() and dist.is_initialized()
-		self._use_native_ddp_wrapper = self._ddp_enabled and bool(getattr(cfg, 'ddp_use_native_wrapper', False))
+		requested_native_ddp_wrapper = bool(getattr(cfg, 'ddp_use_native_wrapper', False))
+		# NOTE:
+		# WorldModel contains TensorDict-backed vectorized ensemble parameters whose
+		# registration order may differ across processes. Native DDP verifies param
+		# ordering across ranks and can fail at construction time for this model.
+		# Keep native wrapper opt-in disabled for this path and rely on explicit,
+		# name-sorted manual gradient synchronization.
+		if self._ddp_enabled and requested_native_ddp_wrapper and int(getattr(cfg, 'global_rank', 0) or 0) == 0:
+			print('DDP warning: ddp_use_native_wrapper=true is currently unsupported for this model; falling back to manual synchronized gradients.')
+		self._use_native_ddp_wrapper = self._ddp_enabled and requested_native_ddp_wrapper and False
 		if self._use_native_ddp_wrapper:
 			local_rank = int(getattr(cfg, 'local_rank', os.environ.get('LOCAL_RANK', 0)))
 			ddp_kwargs = {
@@ -95,7 +104,15 @@ class TDMPC2(torch.nn.Module):
 		world_size = dist.get_world_size()
 		if world_size <= 1:
 			return
-		for p in params:
+		named_params = []
+		for item in params:
+			if isinstance(item, tuple) and len(item) == 2:
+				name, p = item
+			else:
+				name, p = '', item
+			named_params.append((name, p))
+		named_params.sort(key=lambda x: x[0])
+		for _, p in named_params:
 			grad = p.grad if p.grad is not None else torch.zeros_like(p)
 			dist.all_reduce(grad, op=dist.ReduceOp.SUM)
 			if p.grad is not None:
@@ -364,7 +381,7 @@ class TDMPC2(torch.nn.Module):
 		pi_loss = (-(self.cfg.entropy_coef * info["scaled_entropy"] + qs).mean(dim=(1,2)) * rho).mean()
 		pi_loss.backward()
 		if not self._use_native_ddp_wrapper:
-			self._sync_gradients(self._raw_model._pi.parameters())
+			self._sync_gradients(self._raw_model._pi.named_parameters())
 		pi_grad_norm = torch.nn.utils.clip_grad_norm_(self._raw_model._pi.parameters(), self.cfg.grad_clip_norm)
 		self.pi_optim.step()
 		self.pi_optim.zero_grad(set_to_none=True)
@@ -446,7 +463,7 @@ class TDMPC2(torch.nn.Module):
 		# Update model
 		total_loss.backward()
 		if not self._use_native_ddp_wrapper:
-			self._sync_gradients(self._raw_model.parameters())
+			self._sync_gradients(self._raw_model.named_parameters())
 		grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.cfg.grad_clip_norm)
 		self.optim.step()
 		self.optim.zero_grad(set_to_none=True)
