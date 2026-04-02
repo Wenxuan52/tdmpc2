@@ -96,10 +96,10 @@ class TDMPC2(torch.nn.Module):
 		if world_size <= 1:
 			return
 		for p in params:
-			if p.grad is None:
-				continue
-			dist.all_reduce(p.grad, op=dist.ReduceOp.SUM)
-			p.grad.div_(world_size)
+			grad = p.grad if p.grad is not None else torch.zeros_like(p)
+			dist.all_reduce(grad, op=dist.ReduceOp.SUM)
+			if p.grad is not None:
+				p.grad.copy_(grad.div(world_size))
 
 	@property
 	def plan(self):
