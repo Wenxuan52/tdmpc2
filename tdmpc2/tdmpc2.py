@@ -31,7 +31,10 @@ class TDMPC2(torch.nn.Module):
 		base_model.forward = _dispatch_forward
 		self.model = base_model
 		self._ddp_enabled = bool(getattr(cfg, 'use_ddp', False)) and dist.is_available() and dist.is_initialized()
-		self._use_native_ddp_wrapper = self._ddp_enabled and bool(getattr(cfg, 'ddp_use_native_wrapper', False))
+		requested_native_ddp_wrapper = bool(getattr(cfg, 'ddp_use_native_wrapper', False))
+		if self._ddp_enabled and not requested_native_ddp_wrapper and int(getattr(cfg, 'global_rank', 0) or 0) == 0:
+			print('DDP warning: ddp_use_native_wrapper=false is not supported reliably; forcing native DDP wrapper to avoid collective mismatch.')
+		self._use_native_ddp_wrapper = self._ddp_enabled
 		if self._use_native_ddp_wrapper:
 			local_rank = int(getattr(cfg, 'local_rank', os.environ.get('LOCAL_RANK', 0)))
 			ddp_kwargs = {
@@ -90,6 +93,8 @@ class TDMPC2(torch.nn.Module):
 		return getattr(self.model, call_name)(*args, **kwargs)
 
 	def _sync_gradients(self, params):
+		# Kept for backward compatibility in non-native distributed setups.
+		# Native DDP wrapper is enforced when distributed is enabled.
 		if not self._ddp_enabled:
 			return
 		world_size = dist.get_world_size()
