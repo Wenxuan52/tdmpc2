@@ -9,6 +9,7 @@ import torch
 from tqdm import tqdm
 
 from common.buffer import Buffer
+from common.mmap_buffer import MmapBuffer
 from trainer.base import Trainer
 
 
@@ -52,13 +53,28 @@ class OfflineTrainer(Trainer):
 		_cfg.episode_length = 101 if self.cfg.task == 'mt80' else 501
 		_cfg.buffer_size = 550_450_000 if self.cfg.task == 'mt80' else 345_690_000
 		_cfg.steps = _cfg.buffer_size
-		self.buffer = Buffer(_cfg)
-		for fp in tqdm(fps, desc='Loading data'):
-			td = torch.load(fp, weights_only=False)
-			assert td.shape[1] == _cfg.episode_length, \
-				f'Expected episode length {td.shape[1]} to match config episode length {_cfg.episode_length}, ' \
-				f'please double-check your config.'
-			self.buffer.load(td)
+		data_mode = str(getattr(self.cfg, 'offline_data_mode', 'in_memory'))
+		if data_mode == 'mmap':
+			print('Using mmap/lazy offline dataset mode (shared file-backed pages across processes when supported).')
+			parts = []
+			for fp in tqdm(fps, desc='Loading data (mmap)'):
+				try:
+					td = torch.load(fp, weights_only=False, map_location='cpu', mmap=True)
+				except TypeError:
+					td = torch.load(fp, weights_only=False, map_location='cpu')
+				assert td.shape[1] == _cfg.episode_length, \
+					f'Expected episode length {td.shape[1]} to match config episode length {_cfg.episode_length}, ' \
+					f'please double-check your config.'
+				parts.append(td)
+			self.buffer = MmapBuffer(_cfg, parts, episode_length=_cfg.episode_length)
+		else:
+			self.buffer = Buffer(_cfg)
+			for fp in tqdm(fps, desc='Loading data'):
+				td = torch.load(fp, weights_only=False)
+				assert td.shape[1] == _cfg.episode_length, \
+					f'Expected episode length {td.shape[1]} to match config episode length {_cfg.episode_length}, ' \
+					f'please double-check your config.'
+				self.buffer.load(td)
 		expected_episodes = _cfg.buffer_size // _cfg.episode_length
 		if self.buffer.num_eps != expected_episodes:
 			print(f'WARNING: buffer has {self.buffer.num_eps} episodes, expected {expected_episodes} episodes for {self.cfg.task} task set.')
