@@ -45,11 +45,22 @@ class ManiSkillWrapper(gym.Wrapper):
 		return self.env.reset()
 	
 	def step(self, action):
-		reward = 0
+		reward = 0.0
+		done = False
+		info = {}
 		for _ in range(2):
-			obs, r, done, info = self.env.step(action)
+			step_out = self.env.step(action)
+			if len(step_out) == 5:
+				obs, r, terminated, truncated, info = step_out
+				done = terminated or truncated
+				info = dict(info)
+				info['terminated'] = bool(terminated)
+				info['truncated'] = bool(truncated)
+			else:
+				obs, r, done, info = step_out
+				info = dict(info)
+				info.setdefault('terminated', bool(done))
 			reward += r
-			info['terminated'] = done
 			if done:
 				break
 		return obs, reward, done, info
