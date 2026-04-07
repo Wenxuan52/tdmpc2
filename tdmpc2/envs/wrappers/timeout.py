@@ -33,6 +33,7 @@ class Timeout(gym.Wrapper):
 		timeout = self._t >= self.max_episode_steps
 		done = done or timeout
 		if timeout:
-			info['terminated'] = True
+			# Time-limit endings are truncations, not environment terminations.
+			info['terminated'] = False
 			info['truncated'] = True
 		return obs, reward, done, info
