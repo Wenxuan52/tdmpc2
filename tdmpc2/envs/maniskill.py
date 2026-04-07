@@ -78,5 +78,12 @@ def make_env(cfg):
 	)
 	env = ManiSkillWrapper(env, cfg)
 	env = Timeout(env, max_episode_steps=100)
-	env.max_episode_steps = env._max_episode_steps
+	max_episode_steps = getattr(getattr(env, 'spec', None), 'max_episode_steps', None)
+	if max_episode_steps is None:
+		try:
+			max_episode_steps = env.get_wrapper_attr('max_episode_steps')
+		except Exception:
+			max_episode_steps = getattr(env.unwrapped, 'max_episode_steps', None)
+	if max_episode_steps is None:
+		max_episode_steps = getattr(env.unwrapped, '_max_episode_steps', None)
 	return env
