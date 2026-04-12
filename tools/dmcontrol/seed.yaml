@@ -1,0 +1,78 @@
+acrobot-swingup:
+  - seed = [1, 2, 3]
+cartpole-balance:
+  - seed = [1, 2, 3]
+cartpole-balance-sparse:
+  - seed = [1, 2, 3]
+cartpole-swingup:
+  - seed = [1, 2, 3]
+cartpole-swingup-sparse:
+  - seed = [1, 2, 3]
+cheetah-jump:
+  - seed = [1, 2, 3]
+cheetah-run:
+  - seed = [1, 2, 3]
+cheetah-run-back:
+  - seed = [1, 2, 3]
+cheetah-run-backwards:
+  - seed = [1, 2, 3]
+cheetah-run-front:
+  - seed = [1, 2, 3]
+cup-catch:
+  - seed = [1, 2, 3]
+cup-spin:
+  - seed = [1, 2, 3]
+dog-run:
+  - seed = [1, 2, 3]
+dog-trot:
+  - seed = [1, 2, 3]
+dog-stand:
+  - seed = [1, 2, 3]
+dog-walk:
+  - seed = [1, 2, 3]
+finger-spin:
+  - seed = [1, 2, 3]
+finger-turn-easy:
+  - seed = [1, 2, 3]
+finger-turn-hard:
+  - seed = [1, 2, 3]
+fish-swim:
+  - seed = [1, 2, 3]
+hopper-hop:
+  - seed = [1, 2, 3]
+hopper-hop-backwards:
+  - seed = [1, 2, 3]
+hopper-stand:
+  - seed = [1, 2, 3]
+humanoid-run:
+  - seed = [1, 2, 3]
+humanoid-stand:
+  - seed = [1, 2, 3]
+humanoid-walk:
+  - seed = [1, 2, 3]
+pendulum-spin:
+  - seed = [1, 2, 3]
+pendulum-swingup:
+  - seed = [1, 2, 3]
+quadruped-run:
+  - seed = [1, 2, 3]
+quadruped-walk:
+  - seed = [1, 2, 3]
+reacher-easy:
+  - seed = [1, 2, 3]
+reacher-hard:
+  - seed = [1, 2, 3]
+reacher-three-easy:
+  - seed = [1, 2, 3]
+reacher-three-hard:
+  - seed = [1, 2, 3]
+walker-run:
+  - seed = [1, 2, 3]
+walker-run-backwards:
+  - seed = [1, 2, 3]
+walker-stand:
+  - seed = [1, 2, 3]
+walker-walk:
+  - seed = [1, 2, 3]
+walker-walk-backwards:
+  - seed = [1, 2, 3]

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 from typing import Dict, List
 
@@ -64,11 +65,11 @@ METHOD_DIR = {
 }
 
 COLORS = {
-    "ours": "#D55E00",
-    "tdmpc2": "#4C78A8",
-    "tdmpc": "#59A14F",
-    "dreamerv3": "#B279A2",
-    "sac": "#9C9C9C",
+    "ours": "#d64a4b",
+    "tdmpc2": "#7fd54c",
+    "tdmpc": "#5da7df",
+    "dreamerv3": "#8a6bc7",
+    "sac": "#5ad7c3",
 }
 
 DEFAULT_LABELS = {
@@ -111,6 +112,12 @@ def parse_args() -> argparse.Namespace:
         default=Path("figures/DMControl.pdf"),
         help="Output pdf path.",
     )
+    parser.add_argument(
+        "--seed-config",
+        type=Path,
+        default=Path("tools/dmcontrol/seed.yaml"),
+        help="Task-to-seeds config for Ours method.",
+    )
     return parser.parse_args()
 
 
@@ -140,12 +147,49 @@ def _clean_curve_df(df: pd.DataFrame) -> pd.DataFrame:
     return df.sort_values(["seed", "step"]).drop_duplicates(["seed", "step"], keep="last")
 
 
-def load_method_task_data(method: str, task: str, baseline_root: Path, ours_root: Path) -> pd.DataFrame:
+def _extract_seed_list(raw: str) -> List[int]:
+    return [int(x) for x in re.findall(r"\d+", raw)]
+
+
+def load_ours_seed_config(path: Path, tasks: List[str]) -> Dict[str, List[int]]:
+    task_to_seeds = {task: list(EXPECTED_SEEDS) for task in tasks}
+    if not path.exists():
+        return task_to_seeds
+
+    current_task = None
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if raw_line and not raw_line.startswith((" ", "\t")) and line.endswith(":"):
+            current_task = line[:-1].strip()
+            continue
+        if current_task is None:
+            continue
+        if "seed" in line:
+            parsed = _extract_seed_list(line)
+            if parsed:
+                task_to_seeds[current_task] = parsed
+            continue
+        if line.startswith("-"):
+            parsed = _extract_seed_list(line)
+            if parsed:
+                task_to_seeds[current_task] = parsed
+    return task_to_seeds
+
+
+def load_method_task_data(
+    method: str,
+    task: str,
+    baseline_root: Path,
+    ours_root: Path,
+    ours_seeds: List[int],
+) -> pd.DataFrame:
     if method == "ours":
         df = load_task_seed_csvs(
             root=ours_root,
             task=task,
-            seeds=EXPECTED_SEEDS,
+            seeds=ours_seeds,
             step_bucket=GRID_STEP,
         )
     else:
@@ -154,9 +198,12 @@ def load_method_task_data(method: str, task: str, baseline_root: Path, ours_root
     return _clean_curve_df(df)
 
 
-def summarize_mean_ci(df: pd.DataFrame, step_grid: np.ndarray) -> Dict[str, np.ndarray]:
+def summarize_mean_ci(df: pd.DataFrame, step_grid: np.ndarray, seeds: List[int]) -> Dict[str, np.ndarray]:
+    if not seeds:
+        nan_arr = np.full_like(step_grid, np.nan, dtype=float)
+        return {"mean": nan_arr, "ci95": nan_arr}
     seed_curves = []
-    for seed in EXPECTED_SEEDS:
+    for seed in seeds:
         sdf = df[df["seed"] == seed].sort_values("step")
         if sdf.empty:
             seed_curves.append(np.full_like(step_grid, np.nan, dtype=float))
@@ -186,6 +233,7 @@ def summarize_mean_ci(df: pd.DataFrame, step_grid: np.ndarray) -> Dict[str, np.n
 def plot_all(args: argparse.Namespace) -> None:
     labels = dict(DEFAULT_LABELS)
     labels["ours"] = args.ours_legend
+    ours_seed_config = load_ours_seed_config(args.seed_config, DMCONTROL_TASKS)
 
     step_grid = np.arange(0, X_MAX + GRID_STEP, GRID_STEP, dtype=int)
 
@@ -196,18 +244,22 @@ def plot_all(args: argparse.Namespace) -> None:
     for idx, task in enumerate(DMCONTROL_TASKS):
         ax = axes[idx]
         for method in METHODS:
-            df = load_method_task_data(method, task, args.baseline_root, args.ours_root)
-            stats = summarize_mean_ci(df, step_grid)
+            seed_list = ours_seed_config[task] if method == "ours" else EXPECTED_SEEDS
+            df = load_method_task_data(method, task, args.baseline_root, args.ours_root, seed_list)
+            stats = summarize_mean_ci(df, step_grid, seed_list)
             mean = stats["mean"]
             ci = stats["ci95"]
             upper = mean + ci
             lower = mean - ci
             color = COLORS[method]
+            mean_alpha = 1.0 if method == "ours" else 0.55
+            ci_alpha = 0.55 if method == "ours" else 0.25
+            fill_alpha = 0.22 if method == "ours" else 0.15
 
-            line, = ax.plot(step_grid, mean, color=color, linewidth=2)
-            ax.plot(step_grid, upper, color=color, linewidth=1.0, alpha=0.9)
-            ax.plot(step_grid, lower, color=color, linewidth=1.0, alpha=0.9)
-            ax.fill_between(step_grid, lower, upper, color=color, alpha=0.9, linewidth=0)
+            line, = ax.plot(step_grid, mean, color=color, linewidth=2, alpha=mean_alpha)
+            ax.plot(step_grid, upper, color=color, linewidth=1.0, alpha=ci_alpha)
+            ax.plot(step_grid, lower, color=color, linewidth=1.0, alpha=ci_alpha)
+            ax.fill_between(step_grid, lower, upper, color=color, alpha=fill_alpha, linewidth=0)
 
             if idx == 0:
                 legend_handles.append(line)
