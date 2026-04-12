@@ -142,10 +142,19 @@ def _read_baseline_task_csv(path: Path) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame(columns=["step", "reward", "seed"])
     df = pd.read_csv(path)
-    required = {"step", "reward", "seed"}
-    if not required.issubset(df.columns):
-        raise ValueError(f"{path} missing columns {required}")
-    return df[["step", "reward", "seed"]].copy()
+    # MetaWorld baselines are expected to store success in `success` column.
+    # Keep compatibility with any existing `reward`-column exports.
+    if {"step", "seed", "reward"}.issubset(df.columns):
+        out = df[["step", "reward", "seed"]].copy()
+    elif {"step", "seed", "success"}.issubset(df.columns):
+        out = df[["step", "success", "seed"]].rename(columns={"success": "reward"}).copy()
+        # Convert success ratio [0, 1] to percentage [0, 100] for plotting.
+        max_abs = np.nanmax(np.abs(pd.to_numeric(out["reward"], errors="coerce")))
+        if np.isfinite(max_abs) and max_abs <= 1.5:
+            out["reward"] = pd.to_numeric(out["reward"], errors="coerce") * 100.0
+    else:
+        raise ValueError(f"{path} missing columns: expected step/seed with reward or success")
+    return out
 
 
 def _clean_curve_df(df: pd.DataFrame) -> pd.DataFrame:

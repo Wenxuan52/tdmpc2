@@ -1,0 +1,100 @@
+mw-assembly:
+  - seed = [1, 2, 3]
+mw-basketball:
+  - seed = [1, 2, 3]
+mw-bin-picking:
+  - seed = [1, 2, 3]
+mw-box-close:
+  - seed = [1, 2, 3]
+mw-button-press-topdown-wall:
+  - seed = [1, 2, 3]
+mw-button-press-topdown:
+  - seed = [1, 2, 3]
+mw-button-press-wall:
+  - seed = [1, 2, 3]
+mw-button-press:
+  - seed = [1, 2, 3]
+mw-coffee-button:
+  - seed = [1, 2, 3]
+mw-coffee-pull:
+  - seed = [1, 2, 3]
+mw-coffee-push:
+  - seed = [1, 2, 3]
+mw-dial-turn:
+  - seed = [1, 2, 3]
+mw-disassemble:
+  - seed = [1, 2, 3]
+mw-door-close:
+  - seed = [1, 2, 3]
+mw-door-lock:
+  - seed = [1, 2, 3]
+mw-door-open:
+  - seed = [1, 2, 3]
+mw-door-unlock:
+  - seed = [1, 2, 3]
+mw-drawer-close:
+  - seed = [1, 2, 3]
+mw-drawer-open:
+  - seed = [1, 2, 3]
+mw-faucet-close:
+  - seed = [1, 2, 3]
+mw-faucet-open:
+  - seed = [1, 2, 3]
+mw-hammer:
+  - seed = [1, 2, 3]
+mw-hand-insert:
+  - seed = [1, 2, 3]
+mw-handle-press-side:
+  - seed = [1, 2, 3]
+mw-handle-press:
+  - seed = [1, 2, 3]
+mw-handle-pull-side:
+  - seed = [1, 2, 3]
+mw-handle-pull:
+  - seed = [1, 2, 3]
+mw-lever-pull:
+  - seed = [1, 2, 3]
+mw-peg-insert-side:
+  - seed = [1, 2, 3]
+mw-peg-unplug-side:
+  - seed = [1, 2, 3]
+mw-pick-out-of-hole:
+  - seed = [1, 2, 3]
+mw-pick-place-wall:
+  - seed = [1, 2, 3]
+mw-pick-place:
+  - seed = [1, 2, 3]
+mw-plate-slide-back-side:
+  - seed = [1, 2, 3]
+mw-plate-slide-back:
+  - seed = [1, 2, 3]
+mw-plate-slide-side:
+  - seed = [1, 2, 3]
+mw-plate-slide:
+  - seed = [1, 2, 3]
+mw-push-back:
+  - seed = [1, 2, 3]
+mw-push-wall:
+  - seed = [1, 2, 3]
+mw-push:
+  - seed = [1, 2, 3]
+mw-reach-wall:
+  - seed = [1, 2, 3]
+mw-reach:
+  - seed = [1, 2, 3]
+mw-shelf-place:
+  - seed = [1, 2, 3]
+mw-soccer:
+  - seed = [1, 2, 3]
+mw-stick-pull:
+  - seed = [1, 2, 3]
+mw-stick-push:
+  - seed = [1, 2, 3]
+mw-sweep-into:
+  - seed = [1, 2, 3]
+mw-sweep:
+  - seed = [1, 2, 3]
+mw-window-close:
+  - seed = [1, 2, 3]
+mw-window-open:
+  - seed = [1, 2, 3]
