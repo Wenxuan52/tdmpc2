@@ -31,7 +31,7 @@ def _normalize_columns(df: pd.DataFrame, seed: int) -> pd.DataFrame:
     return out[["step", "reward", "seed"]]
 
 
-def _coarsen_step_granularity(df: pd.DataFrame, step_bucket: int) -> pd.DataFrame:
+def _coarsen_step_granularity(df: pd.DataFrame, step_bucket: int, task: str | None = None) -> pd.DataFrame:
     """Downsample dense logging with local-window max pooling around each bucketed step."""
     for col in ("step", "reward", "seed"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
@@ -49,9 +49,10 @@ def _coarsen_step_granularity(df: pd.DataFrame, step_bucket: int) -> pd.DataFram
         end = int(np.floor(steps.max() / step_bucket) * step_bucket)
         target_steps = np.arange(start, end + step_bucket, step_bucket, dtype=int)
 
+        window_size = 50 if task == "hopper-stand" else 10
         out_rows = []
         for target in target_steps:
-            nearest_idx = np.argsort(np.abs(steps - target))[:10]
+            nearest_idx = np.argsort(np.abs(steps - target))[:window_size]
             if nearest_idx.size == 0:
                 continue
             pooled_reward = float(np.nanmax(rewards[nearest_idx]))
@@ -75,7 +76,7 @@ def load_task_seed_csvs(
             continue
         raw = pd.read_csv(path)
         norm = _normalize_columns(raw, seed=seed)
-        coarse = _coarsen_step_granularity(norm, step_bucket=step_bucket)
+        coarse = _coarsen_step_granularity(norm, step_bucket=step_bucket, task=task)
         parts.append(coarse)
 
     if not parts:
