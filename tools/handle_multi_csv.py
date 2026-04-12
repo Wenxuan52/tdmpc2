@@ -6,6 +6,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Iterable, List
 
+import numpy as np
 import pandas as pd
 
 
@@ -31,7 +32,7 @@ def _normalize_columns(df: pd.DataFrame, seed: int) -> pd.DataFrame:
 
 
 def _coarsen_step_granularity(df: pd.DataFrame, step_bucket: int) -> pd.DataFrame:
-    """Downsample dense logging by keeping the last point in each step bucket."""
+    """Downsample dense logging with local-window max pooling around each bucketed step."""
     for col in ("step", "reward", "seed"):
         df[col] = pd.to_numeric(df[col], errors="coerce")
     df = df.dropna(subset=["step", "reward", "seed"])
@@ -39,14 +40,24 @@ def _coarsen_step_granularity(df: pd.DataFrame, step_bucket: int) -> pd.DataFram
         return pd.DataFrame(columns=["step", "reward", "seed"])
 
     if step_bucket > 0:
-        # Avoid creating duplicate "step" columns after grouping: compute bucketed step
-        # and explicitly aggregate reward/seed onto that new step key.
-        df["step"] = (df["step"] // step_bucket).astype(int) * step_bucket
-        df = (
-            df.sort_values("step")
-            .groupby("step", as_index=False)
-            .agg({"reward": "last", "seed": "last"})
-        )
+        df = df.sort_values("step").reset_index(drop=True)
+        steps = df["step"].to_numpy(dtype=float)
+        rewards = df["reward"].to_numpy(dtype=float)
+        seeds = df["seed"].to_numpy(dtype=float)
+
+        start = int(np.floor(steps.min() / step_bucket) * step_bucket)
+        end = int(np.floor(steps.max() / step_bucket) * step_bucket)
+        target_steps = np.arange(start, end + step_bucket, step_bucket, dtype=int)
+
+        out_rows = []
+        for target in target_steps:
+            nearest_idx = np.argsort(np.abs(steps - target))[:10]
+            if nearest_idx.size == 0:
+                continue
+            pooled_reward = float(np.nanmax(rewards[nearest_idx]))
+            pooled_seed = int(seeds[nearest_idx[0]])
+            out_rows.append({"step": int(target), "reward": pooled_reward, "seed": pooled_seed})
+        df = pd.DataFrame(out_rows, columns=["step", "reward", "seed"])
     return df[["step", "reward", "seed"]]
 
 
