@@ -56,7 +56,7 @@ DMCONTROL_TASKS: List[str] = [
     "walker-walk-backwards",
 ]
 
-METHODS = ["ours", "tdmpc2", "tdmpc", "dreamerv3", "sac"]
+METHODS = ["tdmpc2", "tdmpc", "dreamerv3", "sac", "ours"]
 METHOD_DIR = {
     "tdmpc2": "tdmpc2",
     "tdmpc": "tdmpc",
@@ -237,7 +237,7 @@ def plot_all(args: argparse.Namespace) -> None:
 
     step_grid = np.arange(0, X_MAX + GRID_STEP, GRID_STEP, dtype=int)
 
-    fig, axes = plt.subplots(8, 5, figsize=(20, 26), sharex=True, sharey=True)
+    fig, axes = plt.subplots(8, 5, figsize=(22, 26), sharex=True, sharey=True)
     axes = axes.flatten()
 
     legend_handles = []
@@ -264,7 +264,7 @@ def plot_all(args: argparse.Namespace) -> None:
             if idx == 0:
                 legend_handles.append(line)
 
-        ax.set_title(prettify_task_name(task), fontsize=14)
+        ax.set_title(prettify_task_name(task), fontsize=24)
         ax.set_xlim(-100, X_MAX)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)

@@ -49,7 +49,7 @@ def _coarsen_step_granularity(df: pd.DataFrame, step_bucket: int, task: str | No
         end = int(np.floor(steps.max() / step_bucket) * step_bucket)
         target_steps = np.arange(start, end + step_bucket, step_bucket, dtype=int)
 
-        window_size = 50 if task == "hopper-stand" else 10
+        window_size = 500 if task == "hopper-stand" else 10
         out_rows = []
         for target in target_steps:
             nearest_idx = np.argsort(np.abs(steps - target))[:window_size]

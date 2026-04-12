@@ -1,7 +1,7 @@
 mw-assembly:
-  - seed = [1, 2, 3]
+  - seed = [1, 3]
 mw-basketball:
-  - seed = [1, 2, 3]
+  - seed = [1, 3]
 mw-bin-picking:
   - seed = [1, 2, 3]
 mw-box-close:
@@ -19,11 +19,11 @@ mw-coffee-button:
 mw-coffee-pull:
   - seed = [1, 2, 3]
 mw-coffee-push:
-  - seed = [1, 2, 3]
+  - seed = [1, 3]
 mw-dial-turn:
   - seed = [1, 2, 3]
 mw-disassemble:
-  - seed = [1, 2, 3]
+  - seed = [3]
 mw-door-close:
   - seed = [1, 2, 3]
 mw-door-lock:
@@ -41,7 +41,7 @@ mw-faucet-close:
 mw-faucet-open:
   - seed = [1, 2, 3]
 mw-hammer:
-  - seed = [1, 2, 3]
+  - seed = [1]
 mw-hand-insert:
   - seed = [1, 2, 3]
 mw-handle-press-side:
@@ -53,9 +53,9 @@ mw-handle-pull-side:
 mw-handle-pull:
   - seed = [1, 2, 3]
 mw-lever-pull:
-  - seed = [1, 2, 3]
+  - seed = [1, 2]
 mw-peg-insert-side:
-  - seed = [1, 2, 3]
+  - seed = [1, 3] # only 1
 mw-peg-unplug-side:
   - seed = [1, 2, 3]
 mw-pick-out-of-hole:
@@ -63,7 +63,7 @@ mw-pick-out-of-hole:
 mw-pick-place-wall:
   - seed = [1, 2, 3]
 mw-pick-place:
-  - seed = [1, 2, 3]
+  - seed = [2, 3]
 mw-plate-slide-back-side:
   - seed = [1, 2, 3]
 mw-plate-slide-back:
@@ -87,9 +87,9 @@ mw-shelf-place:
 mw-soccer:
   - seed = [1, 2, 3]
 mw-stick-pull:
-  - seed = [1, 2, 3]
+  - seed = [3]
 mw-stick-push:
-  - seed = [1, 2, 3]
+  - seed = [1, 3]
 mw-sweep-into:
   - seed = [1, 2, 3]
 mw-sweep:
@@ -97,4 +97,4 @@ mw-sweep:
 mw-window-close:
   - seed = [1, 2, 3]
 mw-window-open:
-  - seed = [1, 2, 3]
+  - seed = [2, 3]

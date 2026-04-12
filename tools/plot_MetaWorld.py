@@ -67,7 +67,7 @@ METAWORLD_TASKS: List[str] = [
     "mw-window-open",
 ]
 
-METHODS = ["ours", "tdmpc2", "tdmpc", "dreamerv3", "sac"]
+METHODS = ["tdmpc2", "tdmpc", "dreamerv3", "sac", "ours"]
 METHOD_DIR = {
     "tdmpc2": "tdmpc2",
     "tdmpc": "tdmpc",
@@ -287,8 +287,8 @@ def plot_all(args: argparse.Namespace) -> None:
             if idx == 0:
                 legend_handles.append(line)
 
-        ax.set_title(prettify_task_name(task), fontsize=14)
-        ax.set_xlim(-100, X_MAX)
+        ax.set_title(prettify_task_name(task), fontsize=24)
+        ax.set_xlim(-1000, X_MAX)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
 
