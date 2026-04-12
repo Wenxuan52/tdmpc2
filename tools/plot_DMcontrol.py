@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from handle_multi_csv import load_task_seed_csvs
+
 DMCONTROL_TASKS: List[str] = [
     "acrobot-swingup",
     "cartpole-balance",
@@ -126,27 +128,6 @@ def _read_baseline_task_csv(path: Path) -> pd.DataFrame:
     return df[["step", "reward", "seed"]].copy()
 
 
-def _read_ours_task_csv(path: Path, seed: int) -> pd.DataFrame:
-    if not path.exists():
-        return pd.DataFrame(columns=["step", "reward", "seed"])
-    df = pd.read_csv(path)
-    required = {"step", "reward"}
-    if not required.issubset(df.columns):
-        raise ValueError(f"{path} missing columns {required}")
-    if "seed" not in df.columns:
-        df["seed"] = seed
-    df = df[["step", "reward", "seed"]].copy()
-
-    # Ours may log very densely (e.g., every 500 env steps). Keep coarser 100k granularity.
-    for col in ["step", "reward", "seed"]:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    df = df.dropna(subset=["step", "reward", "seed"])
-    df["step_bucket"] = (df["step"] // GRID_STEP).astype(int) * GRID_STEP
-    df = df.sort_values("step").groupby("step_bucket", as_index=False).last()
-    df = df.rename(columns={"step_bucket": "step"})[["step", "reward", "seed"]]
-    return df
-
-
 def _clean_curve_df(df: pd.DataFrame) -> pd.DataFrame:
     if df.empty:
         return df
@@ -161,11 +142,12 @@ def _clean_curve_df(df: pd.DataFrame) -> pd.DataFrame:
 
 def load_method_task_data(method: str, task: str, baseline_root: Path, ours_root: Path) -> pd.DataFrame:
     if method == "ours":
-        parts = []
-        for seed in EXPECTED_SEEDS:
-            path = ours_root / f"{task}_{seed}.csv"
-            parts.append(_read_ours_task_csv(path, seed))
-        df = pd.concat(parts, ignore_index=True) if parts else pd.DataFrame(columns=["step", "reward", "seed"])
+        df = load_task_seed_csvs(
+            root=ours_root,
+            task=task,
+            seeds=EXPECTED_SEEDS,
+            step_bucket=GRID_STEP,
+        )
     else:
         path = baseline_root / METHOD_DIR[method] / f"{task}.csv"
         df = _read_baseline_task_csv(path)
