@@ -81,7 +81,7 @@ DEFAULT_LABELS = {
 }
 
 X_MAX = 4_000_000
-Y_MIN, Y_MAX = 0, 1000
+Y_MIN, Y_MAX = 0, 1010
 GRID_STEP = 100_000
 EXPECTED_SEEDS = [1, 2, 3]
 
@@ -265,7 +265,7 @@ def plot_all(args: argparse.Namespace) -> None:
                 legend_handles.append(line)
 
         ax.set_title(prettify_task_name(task), fontsize=14)
-        ax.set_xlim(0, X_MAX)
+        ax.set_xlim(-100, X_MAX)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
 
