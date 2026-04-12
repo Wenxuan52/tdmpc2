@@ -39,9 +39,14 @@ def _coarsen_step_granularity(df: pd.DataFrame, step_bucket: int) -> pd.DataFram
         return pd.DataFrame(columns=["step", "reward", "seed"])
 
     if step_bucket > 0:
-        df["step_bucket"] = (df["step"] // step_bucket).astype(int) * step_bucket
-        df = df.sort_values("step").groupby("step_bucket", as_index=False).last()
-        df = df.rename(columns={"step_bucket": "step"})
+        # Avoid creating duplicate "step" columns after grouping: compute bucketed step
+        # and explicitly aggregate reward/seed onto that new step key.
+        df["step"] = (df["step"] // step_bucket).astype(int) * step_bucket
+        df = (
+            df.sort_values("step")
+            .groupby("step", as_index=False)
+            .agg({"reward": "last", "seed": "last"})
+        )
     return df[["step", "reward", "seed"]]
 
 
