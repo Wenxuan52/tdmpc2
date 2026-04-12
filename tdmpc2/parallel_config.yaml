@@ -5,7 +5,7 @@ num_gpus: 2
 seeds: [1, 2, 3]
 dmc_steps: 4000000
 metaworld_steps: 2000000
-default_steps: 4000000
+default_steps: 2000000
 planner_type: diffusion
 obs: state
 compile: true
