@@ -12,7 +12,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
-from handle_multi_csv import load_task_seed_csvs
+from handle_metaworld_multi_log import load_task_seed_logs
 
 METAWORLD_TASKS: List[str] = [
     "mw-assembly",
@@ -106,10 +106,10 @@ def parse_args() -> argparse.Namespace:
         help="Root containing baseline folders (sac/dreamerv3/tdmpc/tdmpc2).",
     )
     parser.add_argument(
-        "--ours-root",
+        "--ours-log-root",
         type=Path,
-        default=Path("/media/datasets/cheliu21/cxy_worldmodel/online_csv"),
-        help="Root containing ours CSVs named {task}_{seed}.csv.",
+        default=Path("/media/datasets/cheliu21/cxy_worldmodel/replay/_logs"),
+        help="Root containing ours logs in {task}/seed_{seed}.log.",
     )
     parser.add_argument(
         "--ours-legend",
@@ -204,15 +204,16 @@ def load_method_task_data(
     method: str,
     task: str,
     baseline_root: Path,
-    ours_root: Path,
+    ours_log_root: Path,
     ours_seeds: List[int],
 ) -> pd.DataFrame:
     if method == "ours":
-        df = load_task_seed_csvs(
-            root=ours_root,
+        df = load_task_seed_logs(
+            root=ours_log_root,
             task=task,
             seeds=ours_seeds,
             step_bucket=GRID_STEP,
+            window_size=10,
         )
     else:
         path = baseline_root / METHOD_DIR[method] / f"{task}.csv"
@@ -267,7 +268,7 @@ def plot_all(args: argparse.Namespace) -> None:
         ax = axes[idx]
         for method in METHODS:
             seed_list = ours_seed_config[task] if method == "ours" else EXPECTED_SEEDS
-            df = load_method_task_data(method, task, args.baseline_root, args.ours_root, seed_list)
+            df = load_method_task_data(method, task, args.baseline_root, args.ours_log_root, seed_list)
             stats = summarize_mean_ci(df, step_grid, seed_list)
             mean = stats["mean"]
             ci = stats["ci95"]
