@@ -41,6 +41,7 @@ replay_include_terminated: false
 replay_task_id: -1
 save_reward_csv: false
 reward_csv_dir: ''
+csv_eval_freq: 50000
 
 # planning
 mpc: true

@@ -141,9 +141,14 @@ For running many single-task online jobs in parallel across GPUs, configure `tdm
 python tdmpc2/parallel_train.py --config tdmpc2/parallel_config.yaml
 ```
 
-The launcher assigns one task per GPU at a time, runs the configured seeds for that task concurrently on the same GPU, and can export temporary per-seed replay chunks before merging them into one task-level `.pt` file under `replay_save_dir`.
+The launcher supports two scheduling modes:
+- `job_mode=task` (default): assign one task per GPU worker and execute that task's configured seeds serially.
+- `job_mode=seed`: assign `(task, seed)` jobs with seed-wise GPU rotation (`seed_k` is shifted by `+k` GPUs), so seeds of the same task are spread across different GPUs whenever possible. Combine with `workers_per_gpu>1` to run multiple single-seed jobs concurrently per GPU.
+
+This lets you increase utilization without forcing multiple seeds of the *same task* to fight on one GPU at the same time.
+The launcher can export temporary per-seed replay chunks before merging them into one task-level `.pt` file under `replay_save_dir`.
 The replay output is organized as one final `.pt` per task, with the configured seeds collected for that task and merged into a batched episode TensorDict.
-Per-seed training reward CSVs are also written to `replay_save_dir/_csv/{task}_{seed}.csv`.
+Per-seed CSVs are written to `replay_save_dir/_csv/{task}_{seed}.csv`. For DMControl-style tasks, CSV rows are train `episode_reward`; for Meta-World / ManiSkill2 / MyoSuite tasks, CSV rows are eval `episode_success` sampled every `csv_eval_freq` env steps (default: 50k).
 You can inspect a saved task file with `python tdmpc2/validate_dataset_pt.py /path/to/task.pt`.
 
 ----
