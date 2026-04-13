@@ -8,6 +8,8 @@ from tensordict.tensordict import TensorDict
 from common.replay_buffer_saver import ReplayBufferSaver
 from trainer.base import Trainer
 
+MANISKILL2_TASKS = {'lift-cube', 'pick-cube', 'stack-cube', 'pick-ycb', 'turn-faucet'}
+
 
 class OnlineTrainer(Trainer):
 	"""Trainer class for single-task online TD-MPC2 training."""
@@ -19,13 +21,24 @@ class OnlineTrainer(Trainer):
 		self._start_time = time()
 		self._replay_saver = ReplayBufferSaver(self.cfg)
 		self._reward_csv_fp = None
+		self._reward_csv_mode = None
+		self._csv_eval_freq = int(getattr(self.cfg, 'csv_eval_freq', 50_000) or 50_000)
 		if bool(getattr(self.cfg, 'save_reward_csv', False)):
 			reward_csv_dir = Path(str(getattr(self.cfg, 'reward_csv_dir', '')))
 			reward_csv_dir.mkdir(parents=True, exist_ok=True)
 			self._reward_csv_fp = reward_csv_dir / f'{self.cfg.task}_{self.cfg.seed}.csv'
+			save_eval_success = (
+				str(self.cfg.task).startswith('mw-')
+				or str(self.cfg.task).startswith('myo-')
+				or str(self.cfg.task) in MANISKILL2_TASKS
+			)
+			self._reward_csv_mode = 'eval_success' if save_eval_success else 'train_reward'
 			with open(self._reward_csv_fp, 'w', newline='') as f:
 				writer = csv.writer(f)
-				writer.writerow(['step', 'episode_reward'])
+				if self._reward_csv_mode == 'eval_success':
+					writer.writerow(['step', 'episode_success'])
+				else:
+					writer.writerow(['step', 'episode_reward'])
 
 	def _append_reward_csv(self, step, reward):
 		if self._reward_csv_fp is None:
@@ -33,6 +46,13 @@ class OnlineTrainer(Trainer):
 		with open(self._reward_csv_fp, 'a', newline='') as f:
 			writer = csv.writer(f)
 			writer.writerow([int(step), float(reward)])
+
+	def _append_eval_success_csv(self, step, success):
+		if self._reward_csv_fp is None:
+			return
+		with open(self._reward_csv_fp, 'a', newline='') as f:
+			writer = csv.writer(f)
+			writer.writerow([int(step), float(success)])
 
 	def common_metrics(self):
 		"""Return a dictionary of current metrics."""
@@ -98,6 +118,8 @@ class OnlineTrainer(Trainer):
 			# Evaluate agent periodically
 			if eval_freq > 0 and self._step % eval_freq == 0:
 				eval_next = True
+			if self._reward_csv_mode == 'eval_success' and self._step > 0 and self._step % self._csv_eval_freq == 0:
+				eval_next = True
 
 			# Save model periodically (independent from eval)
 			if save_model_every > 0 and self._step > 0 and self._step % save_model_every == 0:
@@ -107,6 +129,8 @@ class OnlineTrainer(Trainer):
 			if done:
 				if eval_next:
 					eval_metrics = self.eval()
+					if self._reward_csv_mode == 'eval_success':
+						self._append_eval_success_csv(self._step, eval_metrics['episode_success'])
 					eval_metrics.update(self.common_metrics())
 					self.logger.log(eval_metrics, 'eval')
 					eval_next = False
@@ -122,7 +146,8 @@ class OnlineTrainer(Trainer):
 						episode_length=len(self._tds),
 						episode_terminated=info['terminated'])
 					train_metrics.update(self.common_metrics())
-					self._append_reward_csv(train_metrics['step'], train_metrics['episode_reward'])
+					if self._reward_csv_mode != 'eval_success':
+						self._append_reward_csv(train_metrics['step'], train_metrics['episode_reward'])
 					self.logger.log(train_metrics, 'train')
 					self._replay_saver.add_episode(episode_td)
 					self._ep_idx = self.buffer.add(episode_td)
