@@ -36,7 +36,7 @@ class TDMPC2(torch.nn.Module):
 		self.scale = RunningScale(cfg)
 		self.cfg.iterations += 2*int(cfg.action_dim >= 20) # Heuristic for large action spaces
 		self._compile_mode = str(getattr(cfg, 'compile_mode', 'max-autotune-no-cudagraphs'))
-		self._contrastive_beta = float(getattr(cfg, 'contrastive_beta', 0.2))
+		self._contrastive_beta = float(getattr(cfg, 'contrastive_beta', 0.01))
 		self._contrastive_coef = float(getattr(cfg, 'contrastive_coef', 1.0))
 		self._contrastive_clip = float(getattr(cfg, 'contrastive_clip', 5.0))
 		self._contrastive_momentum = float(getattr(cfg, 'contrastive_momentum', 0.99))
