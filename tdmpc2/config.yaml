@@ -21,6 +21,7 @@ reward_coef: 0.1
 value_coef: 0.1
 termination_coef: 1
 consistency_coef: 20
+contrastive_beta: 0.01
 g_coef: 1.0
 rho: 0.5
 lr: 3e-4
