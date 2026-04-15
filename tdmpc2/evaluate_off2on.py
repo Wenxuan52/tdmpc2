@@ -19,6 +19,7 @@ from off2on import (
     SOURCE_TASK_MAP,
     _append_new_task_embedding,
     _infer_mt80_dims,
+    _infer_model_arch_from_state_dict,
     _load_checkpoint_state_dict,
 )
 
@@ -58,6 +59,9 @@ def _build_agent_for_task(cfg, model_path: Path, target_task: str):
     cfg.tasks = list(TASK_SET['mt80'])
 
     state_dict = _load_checkpoint_state_dict(str(model_path))
+    arch_cfg = _infer_model_arch_from_state_dict(state_dict)
+    for k, v in arch_cfg.items():
+        setattr(cfg, k, v)
     obs_dim, action_dim, action_dims = _infer_mt80_dims(state_dict, cfg.task_dim)
     # `state_dict` is an off2on model with an extra task-id row; keep base mt80 dims here.
     if len(action_dims) >= len(cfg.tasks):
