@@ -204,6 +204,7 @@ def off2on(cfg):
 
 	checkpoint = str(cfg.get('checkpoint', '') or '').strip()
 	load_checkpoint = bool(getattr(cfg, 'load_checkpoint', True))
+	print(load_checkpoint)
 	save_path = str(cfg.get('save_path', '') or '').strip()
 	off2on_task = str(cfg.get('off2on_task', '') or '').strip()
 	if load_checkpoint and not checkpoint:
@@ -294,10 +295,11 @@ def off2on(cfg):
 			with open(log_file, 'a') as f:
 				f.write(f'EVAL step={step} reward={eval_metrics["episode_reward"]:.4f} success={eval_metrics["episode_success"]:.4f} len={eval_metrics["episode_length"]:.2f}\n')
 
-		if step > cfg.seed_steps:
-			action = agent.act(obs_pad, t0=len(tds) == 1, task=new_task_idx)
-		else:
+		use_random_exploration = (not load_checkpoint) and (step <= cfg.seed_steps)
+		if use_random_exploration:
 			action = env.rand_act()
+		else:
+			action = agent.act(obs_pad, t0=len(tds) == 1, task=new_task_idx)
 		if action.shape[0] < cfg.action_dim:
 			action = torch.cat([action, torch.zeros(cfg.action_dim - action.shape[0], dtype=action.dtype)], dim=0)
 
@@ -306,7 +308,7 @@ def off2on(cfg):
 		tds.append(_to_td(env, next_obs_pad, task_idx=new_task_idx, action_dim=cfg.action_dim, action=action, reward=reward, terminated=info['terminated']))
 
 		if step >= cfg.seed_steps:
-			num_updates = cfg.seed_steps if step == cfg.seed_steps else 1
+			num_updates = 1
 			for _ in range(num_updates):
 				agent.update(buffer)
 
