@@ -90,6 +90,21 @@ def _infer_mt80_dims(state_dict: dict, task_dim: int):
 	return obs_dim, action_dim, action_dims
 
 
+def _default_mt80_dims(cfg):
+	obs_dim = int(getattr(cfg, 'mt80_obs_dim', 39) or 39)
+	action_dim = int(getattr(cfg, 'mt80_action_dim', 7) or 7)
+	action_dims_cfg = getattr(cfg, 'mt80_action_dims', None)
+	action_dims = []
+	if action_dims_cfg is not None:
+		try:
+			action_dims = [int(x) for x in action_dims_cfg]
+		except TypeError:
+			action_dims = []
+	if len(action_dims) != len(TASK_SET['mt80']):
+		action_dims = [action_dim for _ in TASK_SET['mt80']]
+	return obs_dim, action_dim, action_dims
+
+
 def _episode_length(task_name: str) -> int:
 	return 100 if task_name.startswith('mw-') else 500
 
@@ -155,7 +170,7 @@ def _to_td(env, obs, task_idx, action_dim, action=None, reward=None, terminated=
 		action=action.unsqueeze(0),
 		reward=reward.unsqueeze(0),
 		terminated=terminated.unsqueeze(0),
-		task=task_tensor.unsqueeze(0),
+		task=task_tensor,
 		batch_size=(1,),
 	)
 
@@ -188,9 +203,10 @@ def off2on(cfg):
 	set_seed(cfg.seed)
 
 	checkpoint = str(cfg.get('checkpoint', '') or '').strip()
+	load_checkpoint = bool(getattr(cfg, 'load_checkpoint', True))
 	save_path = str(cfg.get('save_path', '') or '').strip()
 	off2on_task = str(cfg.get('off2on_task', '') or '').strip()
-	if not checkpoint:
+	if load_checkpoint and not checkpoint:
 		raise ValueError('Please provide `checkpoint=/path/to/mt80_19m_checkpoint.pt`.')
 	if not save_path:
 		raise ValueError('Please provide `save_path=/path/to/save_dir`.')
@@ -208,8 +224,14 @@ def off2on(cfg):
 	cfg.steps = 40_000 if cfg.steps <= 0 else cfg.steps
 	cfg.eval_freq = int(getattr(cfg, 'eval_freq', 5_000) or 5_000)
 
-	state_dict = _load_checkpoint_state_dict(checkpoint)
-	obs_dim, action_dim, action_dims = _infer_mt80_dims(state_dict, cfg.task_dim)
+	if load_checkpoint:
+		state_dict = _load_checkpoint_state_dict(checkpoint)
+		obs_dim, action_dim, action_dims = _infer_mt80_dims(state_dict, cfg.task_dim)
+	else:
+		obs_dim, action_dim, action_dims = _default_mt80_dims(cfg)
+		print(colored(
+			f'[Off2On] load_checkpoint=false, using default MT80 dims: obs_dim={obs_dim}, action_dim={action_dim}',
+			'yellow', attrs=['bold']))
 	cfg.obs = 'state'
 	cfg.obs_shape = {'state': (obs_dim,)}
 	cfg.action_dim = action_dim
@@ -222,9 +244,13 @@ def off2on(cfg):
 	target_env_cfg.multitask = False
 	target_env_cfg.task = target_task
 	env = make_env(target_env_cfg)
+	eval_env = make_env(target_env_cfg)
 
 	agent = TDMPC2(cfg)
-	agent.load(checkpoint)
+	if load_checkpoint:
+		agent.load(checkpoint)
+	else:
+		print(colored('[Off2On] Skipping checkpoint load (no-load baseline).', 'yellow', attrs=['bold']))
 	new_task_idx = _append_new_task_embedding(agent, target_task=target_task, source_task=source_task)
 	buffer = Buffer(cfg)
 
@@ -243,6 +269,13 @@ def off2on(cfg):
 	print(colored(f'[Off2On] target={target_task} source={source_task} new_task_idx={new_task_idx}', 'yellow', attrs=['bold']))
 	print(colored(f'[Off2On] output_dir={out_dir}', 'yellow', attrs=['bold']))
 
+	if cfg.eval_freq > 0:
+		init_eval = _evaluate(agent, eval_env, obs_dim, new_task_idx, cfg.eval_episodes)
+		with open(eval_csv, 'a', newline='') as f:
+			csv.writer(f).writerow([0, init_eval['episode_reward'], init_eval['episode_success'], init_eval['episode_length']])
+		with open(log_file, 'a') as f:
+			f.write(f'EVAL step=0 reward={init_eval["episode_reward"]:.4f} success={init_eval["episode_success"]:.4f} len={init_eval["episode_length"]:.2f}\n')
+
 	step, episode = 0, 0
 	obs = env.reset()
 	obs_pad = _pad_obs(obs, obs_dim)
@@ -250,7 +283,7 @@ def off2on(cfg):
 
 	while step <= cfg.steps:
 		if cfg.eval_freq > 0 and step > 0 and step % cfg.eval_freq == 0:
-			eval_metrics = _evaluate(agent, env, obs_dim, new_task_idx, cfg.eval_episodes)
+			eval_metrics = _evaluate(agent, eval_env, obs_dim, new_task_idx, cfg.eval_episodes)
 			with open(eval_csv, 'a', newline='') as f:
 				csv.writer(f).writerow([
 					step,

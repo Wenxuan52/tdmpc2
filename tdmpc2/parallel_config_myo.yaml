@@ -1,0 +1,31 @@
+task_set: mt80
+tasks: []
+gpu_ids: [6,7]
+num_gpus: 0
+seeds: [1, 2, 3]
+dmc_steps: 4000000
+metaworld_steps: 2000000
+default_steps: 2000000
+planner_type: diffusion
+obs: state
+compile: true
+compile_mode: reduce-overhead
+diffusion_eval_compile: true
+diffusion_eval_compile_mode: reduce-overhead
+eval_freq: 0
+save_model_every: 0
+save_replay: true
+replay_save_dir: /media/datasets/cheliu21/cxy_worldmodel/replay
+replay_flush_every_episodes: 1000
+replay_include_terminated: false
+save_reward_csv: true
+merge_cleanup_temp: false
+python_bin: python
+train_entry: tdmpc2/train.py
+exp_name: parallel-online-diffusion
+save_agent: true
+save_video: false
+enable_wandb: false
+common_overrides:
+  - online_save_root=/media/datasets/cheliu21/cxy_worldmodel/online_checkpoint
+  - reward_csv_dir=/media/datasets/cheliu21/cxy_worldmodel/online_csv

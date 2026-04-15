@@ -1,0 +1,20 @@
+cheetah-run:
+  - seed = [1, 2]
+hopper-hop:
+  - seed = [1, 2, 3]
+mw-bin-picking:
+  - seed = [1, 2, 3]
+mw-box-close:
+  - seed = [1, 2, 3]
+mw-door-lock:
+  - seed = [1, 2, 3]
+mw-door-unlock:
+  - seed = [1, 2, 3]
+mw-hand-insert:
+  - seed = [1, 2, 3]
+pendulum-swingup:
+  - seed = [1, 2, 3]
+reacher-hard:
+  - seed = [1, 2, 3]
+walker-run:
+  - seed = [1, 2, 3]

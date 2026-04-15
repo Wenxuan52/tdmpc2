@@ -52,11 +52,12 @@ class DMControlWrapper:
 		return self._obs_to_array(self.env.reset().observation)
 
 	def step(self, action):
-		reward = 0
+		reward = 0.0
 		action = action.astype(self.action_spec_dtype)
 		for _ in range(2):
 			step = self.env.step(action)
-			reward += step.reward
+			# DMControl can emit `None` rewards on some transition boundaries; treat as 0.
+			reward += float(step.reward) if step.reward is not None else 0.0
 		return self._obs_to_array(step.observation), reward, False, defaultdict(float)
 	
 	def render(self, width=384, height=384, camera_id=None):
