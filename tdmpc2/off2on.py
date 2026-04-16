@@ -90,33 +90,6 @@ def _infer_mt80_dims(state_dict: dict, task_dim: int):
 	return obs_dim, action_dim, action_dims
 
 
-def _infer_model_arch_from_state_dict(state_dict: dict):
-	"""Infer core world-model architecture fields from a checkpoint state dict."""
-	required = ('_encoder.state.0.weight', '_dynamics.0.weight', '_dynamics.2.weight')
-	for k in required:
-		if k not in state_dict:
-			raise KeyError(f'Checkpoint must contain `{k}` to infer model architecture.')
-
-	enc_dim = int(state_dict['_encoder.state.0.weight'].shape[0])
-	mlp_dim = int(state_dict['_dynamics.0.weight'].shape[0])
-	latent_dim = int(state_dict['_dynamics.2.weight'].shape[0])
-
-	num_q = None
-	for key, value in state_dict.items():
-		if key.startswith('_Qs.params.') and key.endswith('.weight') and value.ndim >= 3:
-			num_q = int(value.shape[0])
-			break
-	if num_q is None:
-		raise KeyError('Checkpoint must contain `_Qs.params.*.weight` to infer number of Q networks.')
-
-	return {
-		'enc_dim': enc_dim,
-		'mlp_dim': mlp_dim,
-		'latent_dim': latent_dim,
-		'num_q': num_q,
-	}
-
-
 def _default_mt80_dims(cfg):
 	obs_dim = int(getattr(cfg, 'mt80_obs_dim', 39) or 39)
 	action_dim = int(getattr(cfg, 'mt80_action_dim', 7) or 7)
@@ -254,9 +227,6 @@ def off2on(cfg):
 
 	if load_checkpoint:
 		state_dict = _load_checkpoint_state_dict(checkpoint)
-		arch_cfg = _infer_model_arch_from_state_dict(state_dict)
-		for k, v in arch_cfg.items():
-			setattr(cfg, k, v)
 		obs_dim, action_dim, action_dims = _infer_mt80_dims(state_dict, cfg.task_dim)
 	else:
 		obs_dim, action_dim, action_dims = _default_mt80_dims(cfg)
@@ -338,7 +308,7 @@ def off2on(cfg):
 		tds.append(_to_td(env, next_obs_pad, task_idx=new_task_idx, action_dim=cfg.action_dim, action=action, reward=reward, terminated=info['terminated']))
 
 		if step >= cfg.seed_steps:
-			num_updates = 1
+			num_updates = cfg.seed_steps if step == cfg.seed_steps else 1
 			for _ in range(num_updates):
 				agent.update(buffer)
 

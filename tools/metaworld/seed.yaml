@@ -1,8 +1,8 @@
 mw-assembly:
-  - seed = [1, 3]
+  - seed = [1, 2, 3]
   - source = csv
 mw-basketball:
-  - seed = [1, 3]
+  - seed = [1, 2, 3]
   - source = csv
 mw-bin-picking:
   - seed = [1, 2, 3]
@@ -35,14 +35,14 @@ mw-dial-turn:
   - seed = [1, 2, 3]
   - source = log
 mw-disassemble:
-  - seed = [3]
-  - source = log
+  - seed = [1, 2, 3]
+  - source = csv
 mw-door-close:
   - seed = [1, 2, 3]
   - source = log
 mw-door-lock:
   - seed = [1, 2, 3]
-  - source = log
+  - source = csv
 mw-door-open:
   - seed = [1, 2, 3]
   - source = log
@@ -51,7 +51,7 @@ mw-door-unlock:
   - source = log
 mw-drawer-close:
   - seed = [1, 2, 3]
-  - source = log
+  - source = csv
 mw-drawer-open:
   - seed = [1, 2, 3]
   - source = log
@@ -72,7 +72,7 @@ mw-handle-press-side:
   - source = log
 mw-handle-press:
   - seed = [1, 2, 3]
-  - source = log
+  - source = csv
 mw-handle-pull-side:
   - seed = [1, 2, 3]
   - source = csv
@@ -80,7 +80,7 @@ mw-handle-pull:
   - seed = [1, 2, 3]
   - source = log
 mw-lever-pull:
-  - seed = [1, 2]
+  - seed = [1, 2, 3]
   - source = csv
 mw-peg-insert-side:
   - seed = [1, 3] # only 1
@@ -95,7 +95,7 @@ mw-pick-place-wall:
   - seed = [1, 2, 3]
   - source = csv
 mw-pick-place:
-  - seed = [2, 3]
+  - seed = [1, 2, 3]
   - source = csv
 mw-plate-slide-back-side:
   - seed = [1, 2, 3]

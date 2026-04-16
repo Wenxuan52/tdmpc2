@@ -81,7 +81,7 @@ DEFAULT_LABELS = {
 }
 
 X_MAX = 4_000_000
-Y_MIN, Y_MAX = 0, 1010
+Y_MIN, Y_MAX = -10, 1010
 GRID_STEP = 100_000
 EXPECTED_SEEDS = [1, 2, 3]
 
@@ -253,10 +253,11 @@ def plot_all(args: argparse.Namespace) -> None:
             lower = mean - ci
             color = COLORS[method]
             mean_alpha = 1.0 if method == "ours" else 0.55
-            ci_alpha = 0.55 if method == "ours" else 0.25
-            fill_alpha = 0.22 if method == "ours" else 0.15
+            ci_alpha = 0.30 if method == "ours" else 0.25
+            fill_alpha = 0.18 if method == "ours" else 0.15
 
-            line, = ax.plot(step_grid, mean, color=color, linewidth=2, alpha=mean_alpha)
+            line_width = 4 if method == "ours" else 2
+            line, = ax.plot(step_grid, mean, color=color, linewidth=line_width, alpha=mean_alpha)
             ax.plot(step_grid, upper, color=color, linewidth=1.0, alpha=ci_alpha)
             ax.plot(step_grid, lower, color=color, linewidth=1.0, alpha=ci_alpha)
             ax.fill_between(step_grid, lower, upper, color=color, alpha=fill_alpha, linewidth=0)

@@ -1,5 +1,5 @@
 cheetah-run:
-  - seed = [1, 2]
+  - seed = [1, 2, 3]
 hopper-hop:
   - seed = [1, 2, 3]
 mw-bin-picking:
