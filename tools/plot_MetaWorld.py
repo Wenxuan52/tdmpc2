@@ -95,6 +95,7 @@ X_MAX = 2_000_000
 Y_MIN, Y_MAX = -1.0, 101.0
 GRID_STEP = 100_000
 EXPECTED_SEEDS = [1, 2, 3]
+DEFAULT_OURS_SOURCE = "log"
 
 
 def parse_args() -> argparse.Namespace:
@@ -128,6 +129,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=Path("tools/metaworld/seed.yaml"),
         help="Task-to-seeds config for Ours method.",
+    )
+    parser.add_argument(
+        "--ours-csv-root",
+        type=Path,
+        default=Path("/media/datasets/cheliu21/cxy_worldmodel/online_csv"),
+        help="Root containing ours CSV files in {task}_*.csv when source=csv.",
     )
     return parser.parse_args()
 
@@ -173,10 +180,12 @@ def _extract_seed_list(raw: str) -> List[int]:
     return [int(x) for x in re.findall(r"\d+", raw)]
 
 
-def load_ours_seed_config(path: Path, tasks: List[str]) -> Dict[str, List[int]]:
-    task_to_seeds = {task: list(EXPECTED_SEEDS) for task in tasks}
+def load_ours_seed_config(path: Path, tasks: List[str]) -> Dict[str, Dict[str, object]]:
+    task_to_cfg: Dict[str, Dict[str, object]] = {
+        task: {"seeds": list(EXPECTED_SEEDS), "source": DEFAULT_OURS_SOURCE} for task in tasks
+    }
     if not path.exists():
-        return task_to_seeds
+        return task_to_cfg
 
     current_task = None
     for raw_line in path.read_text(encoding="utf-8").splitlines():
@@ -191,13 +200,58 @@ def load_ours_seed_config(path: Path, tasks: List[str]) -> Dict[str, List[int]]:
         if "seed" in line:
             parsed = _extract_seed_list(line)
             if parsed:
-                task_to_seeds[current_task] = parsed
+                task_to_cfg[current_task]["seeds"] = parsed
+            continue
+        if "source" in line:
+            source_match = re.search(r"(csv|log)", line.lower())
+            if source_match:
+                task_to_cfg[current_task]["source"] = source_match.group(1)
             continue
         if line.startswith("-"):
             parsed = _extract_seed_list(line)
             if parsed:
-                task_to_seeds[current_task] = parsed
-    return task_to_seeds
+                task_to_cfg[current_task]["seeds"] = parsed
+    return task_to_cfg
+
+
+def _sort_csv_seed_files(paths: List[Path]) -> List[Path]:
+    def key(path: Path):
+        match = re.search(r"_(\d+)\.csv$", path.name)
+        return (int(match.group(1)) if match else 10**9, path.name)
+
+    return sorted(paths, key=key)
+
+
+def _read_ours_task_csv(task: str, csv_root: Path, seeds: List[int]) -> pd.DataFrame:
+    paths = _sort_csv_seed_files(list(csv_root.glob(f"{task}_*.csv")))
+    if not paths:
+        return pd.DataFrame(columns=["step", "reward", "seed"])
+
+    # We intentionally map files to configured seeds by sorted file order so the
+    # plotting seed selection remains stable even when filename suffixes are not
+    # exactly equal to semantic seed id.
+    selected_paths = paths[: len(seeds)]
+    records: List[pd.DataFrame] = []
+    for seed, path in zip(seeds, selected_paths):
+        raw = pd.read_csv(path)
+        if {"step", "episode_success"}.issubset(raw.columns):
+            sdf = raw[["step", "episode_success"]].rename(columns={"episode_success": "reward"}).copy()
+        elif {"step", "success"}.issubset(raw.columns):
+            sdf = raw[["step", "success"]].rename(columns={"success": "reward"}).copy()
+        elif {"step", "reward"}.issubset(raw.columns):
+            sdf = raw[["step", "reward"]].copy()
+        else:
+            raise ValueError(f"{path} missing columns: expected step with episode_success/success/reward")
+
+        sdf["seed"] = seed
+        max_abs = np.nanmax(np.abs(pd.to_numeric(sdf["reward"], errors="coerce")))
+        if np.isfinite(max_abs) and max_abs <= 1.5:
+            sdf["reward"] = pd.to_numeric(sdf["reward"], errors="coerce") * 100.0
+        records.append(sdf)
+
+    if not records:
+        return pd.DataFrame(columns=["step", "reward", "seed"])
+    return pd.concat(records, ignore_index=True)
 
 
 def load_method_task_data(
@@ -205,16 +259,21 @@ def load_method_task_data(
     task: str,
     baseline_root: Path,
     ours_log_root: Path,
+    ours_csv_root: Path,
     ours_seeds: List[int],
+    ours_source: str,
 ) -> pd.DataFrame:
     if method == "ours":
-        df = load_task_seed_logs(
-            root=ours_log_root,
-            task=task,
-            seeds=ours_seeds,
-            step_bucket=GRID_STEP,
-            window_size=10,
-        )
+        if ours_source == "csv":
+            df = _read_ours_task_csv(task=task, csv_root=ours_csv_root, seeds=ours_seeds)
+        else:
+            df = load_task_seed_logs(
+                root=ours_log_root,
+                task=task,
+                seeds=ours_seeds,
+                step_bucket=GRID_STEP,
+                window_size=10,
+            )
     else:
         path = baseline_root / METHOD_DIR[method] / f"{task}.csv"
         df = _read_baseline_task_csv(path)
@@ -267,8 +326,18 @@ def plot_all(args: argparse.Namespace) -> None:
     for idx, task in enumerate(METAWORLD_TASKS):
         ax = axes[idx]
         for method in METHODS:
-            seed_list = ours_seed_config[task] if method == "ours" else EXPECTED_SEEDS
-            df = load_method_task_data(method, task, args.baseline_root, args.ours_log_root, seed_list)
+            task_cfg = ours_seed_config[task]
+            seed_list = task_cfg["seeds"] if method == "ours" else EXPECTED_SEEDS
+            source = task_cfg["source"] if method == "ours" else "log"
+            df = load_method_task_data(
+                method,
+                task,
+                args.baseline_root,
+                args.ours_log_root,
+                args.ours_csv_root,
+                seed_list,
+                source,
+            )
             stats = summarize_mean_ci(df, step_grid, seed_list)
             mean = stats["mean"]
             ci = stats["ci95"]
@@ -279,7 +348,8 @@ def plot_all(args: argparse.Namespace) -> None:
             ci_alpha = 0.55 if method == "ours" else 0.25
             fill_alpha = 0.22 if method == "ours" else 0.15
 
-            line, = ax.plot(step_grid, mean, color=color, linewidth=2, alpha=mean_alpha)
+            line_width = 4 if method == "ours" else 2
+            line, = ax.plot(step_grid, mean, color=color, linewidth=line_width, alpha=mean_alpha)
             ax.plot(step_grid, upper, color=color, linewidth=1.0, alpha=ci_alpha)
             ax.plot(step_grid, lower, color=color, linewidth=1.0, alpha=ci_alpha)
             ax.fill_between(step_grid, lower, upper, color=color, alpha=fill_alpha, linewidth=0)
@@ -287,7 +357,7 @@ def plot_all(args: argparse.Namespace) -> None:
             if idx == 0:
                 legend_handles.append(line)
 
-        ax.set_title(prettify_task_name(task), fontsize=24)
+        ax.set_title(prettify_task_name(task), fontsize=26)
         ax.set_xlim(-1000, X_MAX)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
@@ -297,14 +367,15 @@ def plot_all(args: argparse.Namespace) -> None:
         ax.set_yticks([0, 50, 100])
 
         if row == 9:
-            ax.set_xticklabels(["0", "1M", "2M"], fontsize=12)
+            ax.set_xticklabels(["0", "1M", "2M"])
+            ax.tick_params(axis="x", labelsize=20, labelbottom=True)
         else:
-            ax.set_xticklabels([])
+            ax.tick_params(axis="x", labelbottom=False)
 
         if col == 0:
-            ax.set_yticklabels(["0", "50", "100"], fontsize=12)
+            ax.tick_params(axis="y", labelsize=20, labelleft=True)
         else:
-            ax.set_yticklabels([])
+            ax.tick_params(axis="y", labelleft=False)
 
     fig.legend(
         legend_handles,
@@ -313,7 +384,7 @@ def plot_all(args: argparse.Namespace) -> None:
         bbox_to_anchor=(0.5, 0.03),
         ncol=5,
         frameon=False,
-        fontsize=16,
+        fontsize=20,
     )
 
     fig.subplots_adjust(left=0.06, right=0.995, top=0.98, bottom=0.07, wspace=0.15, hspace=0.4)
