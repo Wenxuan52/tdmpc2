@@ -1,100 +1,150 @@
 mw-assembly:
   - seed = [1, 3]
+  - source = csv
 mw-basketball:
   - seed = [1, 3]
+  - source = csv
 mw-bin-picking:
   - seed = [1, 2, 3]
+  - source = csv
 mw-box-close:
   - seed = [1, 2, 3]
+  - source = csv
 mw-button-press-topdown-wall:
   - seed = [1, 2, 3]
+  - source = csv
 mw-button-press-topdown:
   - seed = [1, 2, 3]
+  - source = csv
 mw-button-press-wall:
   - seed = [1, 2, 3]
+  - source = csv
 mw-button-press:
   - seed = [1, 2, 3]
+  - source = csv
 mw-coffee-button:
   - seed = [1, 2, 3]
+  - source = log
 mw-coffee-pull:
   - seed = [1, 2, 3]
+  - source = csv
 mw-coffee-push:
   - seed = [1, 3]
+  - source = log
 mw-dial-turn:
   - seed = [1, 2, 3]
+  - source = log
 mw-disassemble:
   - seed = [3]
+  - source = log
 mw-door-close:
   - seed = [1, 2, 3]
+  - source = log
 mw-door-lock:
   - seed = [1, 2, 3]
+  - source = log
 mw-door-open:
   - seed = [1, 2, 3]
+  - source = log
 mw-door-unlock:
   - seed = [1, 2, 3]
+  - source = log
 mw-drawer-close:
   - seed = [1, 2, 3]
+  - source = log
 mw-drawer-open:
   - seed = [1, 2, 3]
+  - source = log
 mw-faucet-close:
   - seed = [1, 2, 3]
+  - source = log
 mw-faucet-open:
   - seed = [1, 2, 3]
+  - source = log
 mw-hammer:
   - seed = [1]
+  - source = log
 mw-hand-insert:
   - seed = [1, 2, 3]
+  - source = log
 mw-handle-press-side:
   - seed = [1, 2, 3]
+  - source = log
 mw-handle-press:
   - seed = [1, 2, 3]
+  - source = log
 mw-handle-pull-side:
   - seed = [1, 2, 3]
+  - source = csv
 mw-handle-pull:
   - seed = [1, 2, 3]
+  - source = log
 mw-lever-pull:
   - seed = [1, 2]
+  - source = csv
 mw-peg-insert-side:
   - seed = [1, 3] # only 1
+  - source = log
 mw-peg-unplug-side:
   - seed = [1, 2, 3]
+  - source = log
 mw-pick-out-of-hole:
   - seed = [1, 2, 3]
+  - source = csv
 mw-pick-place-wall:
   - seed = [1, 2, 3]
+  - source = csv
 mw-pick-place:
   - seed = [2, 3]
+  - source = csv
 mw-plate-slide-back-side:
   - seed = [1, 2, 3]
+  - source = log
 mw-plate-slide-back:
   - seed = [1, 2, 3]
+  - source = log
 mw-plate-slide-side:
   - seed = [1, 2, 3]
+  - source = log
 mw-plate-slide:
   - seed = [1, 2, 3]
+  - source = log
 mw-push-back:
   - seed = [1, 2, 3]
+  - source = csv
 mw-push-wall:
   - seed = [1, 2, 3]
+  - source = log
 mw-push:
   - seed = [1, 2, 3]
+  - source = log
 mw-reach-wall:
   - seed = [1, 2, 3]
+  - source = log
 mw-reach:
   - seed = [1, 2, 3]
+  - source = log
 mw-shelf-place:
   - seed = [1, 2, 3]
+  - source = csv
 mw-soccer:
   - seed = [1, 2, 3]
+  - source = log
 mw-stick-pull:
   - seed = [3]
+  - source = log
 mw-stick-push:
   - seed = [1, 3]
+  - source = log
 mw-sweep-into:
   - seed = [1, 2, 3]
+  - source = log
 mw-sweep:
   - seed = [1, 2, 3]
+  - source = log
 mw-window-close:
   - seed = [1, 2, 3]
+  - source = log
 mw-window-open:
   - seed = [2, 3]
+  - source = log
