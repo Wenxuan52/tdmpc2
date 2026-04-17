@@ -79,7 +79,15 @@ class ReplayBufferSaver:
 	def add_episode(self, episode: TensorDict):
 		if not self.enabled:
 			return
-		self._episodes.append(self._prepare_episode(episode))
+		prepared = self._prepare_episode(episode)
+		if self._episodes:
+			current_len = int(self._episodes[0].batch_size[0])
+			incoming_len = int(prepared.batch_size[0])
+			# Episodic environments (e.g., ManiSkill) can yield variable-length episodes.
+			# TensorDict stack requires equal batch sizes, so flush before mixing lengths.
+			if incoming_len != current_len:
+				self.flush()
+		self._episodes.append(prepared)
 		if len(self._episodes) >= self._flush_every:
 			self.flush()
 
@@ -120,7 +128,7 @@ def merge_seed_replay_chunks(task: str, seed_dirs: Iterable[Path], output_path: 
 	if not chunk_paths:
 		raise FileNotFoundError(f'No replay chunks found for task "{task}".')
 
-	parts = []
+	parts_by_length: dict[int, list[TensorDict]] = {}
 	num_episodes = 0
 	episode_length = None
 	for fp in chunk_paths:
@@ -129,20 +137,34 @@ def merge_seed_replay_chunks(task: str, seed_dirs: Iterable[Path], output_path: 
 			raise TypeError(f'Expected TensorDict at {fp}, got {type(td)}.')
 		if len(td.batch_size) != 2:
 			raise ValueError(f'Expected batch_size [num_episodes, episode_length] at {fp}, got {td.batch_size}.')
+		length = int(td.batch_size[1])
 		if episode_length is None:
-			episode_length = int(td.batch_size[1])
-		elif episode_length != int(td.batch_size[1]):
-			raise ValueError(
-				f'Inconsistent episode length while merging task "{task}": '
-				f'expected {episode_length}, found {int(td.batch_size[1])} at {fp}.'
-			)
+			episode_length = length
+		elif episode_length != length:
+			episode_length = -1
 		num_episodes += int(td.batch_size[0])
-		parts.append(td)
+		parts_by_length.setdefault(length, []).append(td)
 
-	merged = parts[0] if len(parts) == 1 else torch.cat(parts, dim=0).contiguous()
+	merged_by_length = {}
+	for length, length_parts in parts_by_length.items():
+		merged_by_length[length] = length_parts[0] if len(length_parts) == 1 else torch.cat(length_parts, dim=0).contiguous()
+	if len(merged_by_length) == 1:
+		merged = next(iter(merged_by_length.values()))
+	else:
+		# Keep variable-length episodes grouped by their sequence length.
+		# This preserves full trajectories without padding artifacts.
+		merged = {
+			'variable_length': True,
+			'task': task,
+			'lengths': sorted(merged_by_length.keys()),
+			'chunks_by_length': {str(k): v.to('cpu') for k, v in merged_by_length.items()},
+		}
 	output_path = Path(output_path)
 	output_path.parent.mkdir(parents=True, exist_ok=True)
-	torch.save(merged.to('cpu'), output_path)
+	if isinstance(merged, TensorDict):
+		torch.save(merged.to('cpu'), output_path)
+	else:
+		torch.save(merged, output_path)
 
 	if cleanup:
 		for seed_dir in seed_dirs:
