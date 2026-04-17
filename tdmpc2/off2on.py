@@ -307,10 +307,14 @@ def off2on(cfg):
 		next_obs_pad = _pad_obs(next_obs, obs_dim)
 		tds.append(_to_td(env, next_obs_pad, task_idx=new_task_idx, action_dim=cfg.action_dim, action=action, reward=reward, terminated=info['terminated']))
 
-		if step >= cfg.seed_steps:
-			num_updates = cfg.seed_steps if step == cfg.seed_steps else 1
-			for _ in range(num_updates):
+		if load_checkpoint:
+			if buffer.num_eps > 0:
 				agent.update(buffer)
+		else:
+			if step >= cfg.seed_steps:
+				num_updates = cfg.seed_steps if step == cfg.seed_steps else 1
+				for _ in range(num_updates):
+					agent.update(buffer)
 
 		if done:
 			episode_td = torch.cat(tds)
