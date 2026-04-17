@@ -1,15 +1,15 @@
 task_set: mt80
 tasks: []
 gpu_ids: []
-num_gpus: 2
+num_gpus: 8
 job_mode: seed
 workers_per_gpu: 3
-seeds: [1, 2, 3]
-dmc_steps: 4000000
-metaworld_steps: 4000000
-default_steps: 4000000
+seeds: [7, 8, 9]
+dmc_steps: 1000000
+metaworld_steps: 1000000
+default_steps: 1000000
 planner_type: diffusion
-obs: state
+obs: rgb
 compile: true
 compile_mode: max-autotune-no-cudagraphs
 diffusion_eval_compile: true
@@ -30,6 +30,5 @@ save_agent: true
 save_video: false
 enable_wandb: false
 common_overrides:
-  - online_save_root=/media/datasets/cheliu21/cxy_worldmodel/online_checkpoint
-  - reward_csv_dir=/media/datasets/cheliu21/cxy_worldmodel/online_csv
-  - episodic=true
+  - online_save_root=/media/datasets/cheliu21/cxy_worldmodel/online_pixels_checkpoint
+  - reward_csv_dir=/media/datasets/cheliu21/cxy_worldmodel/online_pixels_csv
