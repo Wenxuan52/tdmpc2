@@ -144,7 +144,21 @@ def _clean_curve_df(df: pd.DataFrame) -> pd.DataFrame:
     df = df[(df["step"] >= 0) & (df["step"] <= X_MAX)].copy()
     df["step"] = df["step"].astype(int)
     df["seed"] = df["seed"].astype(int)
-    return df.sort_values(["seed", "step"]).drop_duplicates(["seed", "step"], keep="last")
+    df = df.sort_values(["seed", "step"]).drop_duplicates(["seed", "step"], keep="last")
+
+    # Enforce every existing seed curve has (step=0, reward=0.0).
+    # - If step=0 exists, force reward to 0.0.
+    # - If step=0 is missing, append (0, 0.0) for that seed.
+    df.loc[df["step"] == 0, "reward"] = 0.0
+    missing_seed0 = set(df["seed"].unique()) - set(df.loc[df["step"] == 0, "seed"].unique())
+    if missing_seed0:
+        pad_rows = pd.DataFrame(
+            [{"step": 0, "reward": 0.0, "seed": seed} for seed in sorted(missing_seed0)]
+        )
+        df = pd.concat([df, pad_rows], ignore_index=True)
+    df = df.sort_values(["seed", "step"]).drop_duplicates(["seed", "step"], keep="last")
+
+    return df
 
 
 def _extract_seed_list(raw: str) -> List[int]:
@@ -265,7 +279,7 @@ def plot_all(args: argparse.Namespace) -> None:
             if idx == 0:
                 legend_handles.append(line)
 
-        ax.set_title(prettify_task_name(task), fontsize=24)
+        ax.set_title(prettify_task_name(task), fontsize=26)
         ax.set_xlim(-100, X_MAX)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
@@ -275,14 +289,15 @@ def plot_all(args: argparse.Namespace) -> None:
         ax.set_yticks([0, 500, 1000])
 
         if row == 7:
-            ax.set_xticklabels(["0", "1M", "2M", "3M", "4M"], fontsize=12)
+            ax.set_xticklabels(["0", "1M", "2M", "3M", "4M"])
+            ax.tick_params(axis="x", labelsize=20, labelbottom=True)
         else:
-            ax.set_xticklabels([])
+            ax.tick_params(axis="x", labelbottom=False)
 
         if col == 0:
-            ax.set_yticklabels(["0", "500", "1000"], fontsize=12)
+            ax.tick_params(axis="y", labelsize=20, labelleft=True)
         else:
-            ax.set_yticklabels([])
+            ax.tick_params(axis="y", labelleft=False)
 
     # 8x5 grid has one extra subplot (40th). Hide it.
     axes[-1].axis("off")
@@ -294,7 +309,7 @@ def plot_all(args: argparse.Namespace) -> None:
         bbox_to_anchor=(0.5, 0.035),
         ncol=5,
         frameon=False,
-        fontsize=16,
+        fontsize=20,
     )
 
     fig.subplots_adjust(left=0.06, right=0.995, top=0.96, bottom=0.085, wspace=0.15, hspace=0.4)
