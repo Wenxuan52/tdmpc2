@@ -144,7 +144,18 @@ def _clean_curve_df(df: pd.DataFrame) -> pd.DataFrame:
     df = df[(df["step"] >= 0) & (df["step"] <= X_MAX)].copy()
     df["step"] = df["step"].astype(int)
     df["seed"] = df["seed"].astype(int)
-    return df.sort_values(["seed", "step"]).drop_duplicates(["seed", "step"], keep="last")
+    df = df.sort_values(["seed", "step"]).drop_duplicates(["seed", "step"], keep="last")
+
+    # Ensure every existing seed curve starts at (step=0, reward=0.0) when missing.
+    missing_seed0 = set(df["seed"].unique()) - set(df.loc[df["step"] == 0, "seed"].unique())
+    if missing_seed0:
+        pad_rows = pd.DataFrame(
+            [{"step": 0, "reward": 0.0, "seed": seed} for seed in sorted(missing_seed0)]
+        )
+        df = pd.concat([df, pad_rows], ignore_index=True)
+        df = df.sort_values(["seed", "step"]).drop_duplicates(["seed", "step"], keep="last")
+
+    return df
 
 
 def _extract_seed_list(raw: str) -> List[int]:
