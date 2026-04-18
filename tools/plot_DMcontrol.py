@@ -265,7 +265,7 @@ def plot_all(args: argparse.Namespace) -> None:
             if idx == 0:
                 legend_handles.append(line)
 
-        ax.set_title(prettify_task_name(task), fontsize=24)
+        ax.set_title(prettify_task_name(task), fontsize=26)
         ax.set_xlim(-100, X_MAX)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
@@ -275,14 +275,15 @@ def plot_all(args: argparse.Namespace) -> None:
         ax.set_yticks([0, 500, 1000])
 
         if row == 7:
-            ax.set_xticklabels(["0", "1M", "2M", "3M", "4M"], fontsize=12)
+            ax.set_xticklabels(["0", "1M", "2M", "3M", "4M"])
+            ax.tick_params(axis="x", labelsize=20, labelbottom=True)
         else:
-            ax.set_xticklabels([])
+            ax.tick_params(axis="x", labelbottom=False)
 
         if col == 0:
-            ax.set_yticklabels(["0", "500", "1000"], fontsize=12)
+            ax.tick_params(axis="y", labelsize=20, labelleft=True)
         else:
-            ax.set_yticklabels([])
+            ax.tick_params(axis="y", labelleft=False)
 
     # 8x5 grid has one extra subplot (40th). Hide it.
     axes[-1].axis("off")
@@ -294,7 +295,7 @@ def plot_all(args: argparse.Namespace) -> None:
         bbox_to_anchor=(0.5, 0.035),
         ncol=5,
         frameon=False,
-        fontsize=16,
+        fontsize=20,
     )
 
     fig.subplots_adjust(left=0.06, right=0.995, top=0.96, bottom=0.085, wspace=0.15, hspace=0.4)
