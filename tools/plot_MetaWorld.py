@@ -381,12 +381,11 @@ def plot_all(args: argparse.Namespace) -> None:
             ax.set_xticklabels(["0", "1M", "2M"])
             ax.tick_params(axis="x", labelsize=20, labelbottom=True)
         else:
-            ax.tick_params(axis="x", labelbottom=False)
+            ax.tick_params(axis="x", labelsize=20, labelbottom=False)
 
-        if col == 0:
-            ax.tick_params(axis="y", labelsize=20, labelleft=True)
-        else:
-            ax.tick_params(axis="y", labelleft=False)
+        # Always render y-axis tick labels so each subplot keeps visible y ticks.
+        # This avoids missing y-axis ticks when shared axes are used.
+        ax.tick_params(axis="y", labelsize=20, labelleft=True)
 
     fig.legend(
         legend_handles,

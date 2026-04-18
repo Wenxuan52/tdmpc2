@@ -1,3 +1,4 @@
+## MetaWorld plotting seed/source configuration used by tools/plot_MetaWorld.py.
 mw-assembly:
   - seed = [1, 2, 3]
   - source = csv
