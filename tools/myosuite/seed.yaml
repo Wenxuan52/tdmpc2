@@ -1,0 +1,30 @@
+myo-key-turn-hard:
+  - seed = [1, 2, 3]
+  - source = csv
+myo-key-turn:
+  - seed = [1, 2, 3]
+  - source = log
+myo-obj-hold-hard:
+  - seed = [1, 2, 3]
+  - source = csv
+myo-obj-hold:
+  - seed = [1, 2, 3]
+  - source = log
+myo-pen-twirl-hard:
+  - seed = [1, 2, 3]
+  - source = csv
+myo-pen-twirl:
+  - seed = [1, 2, 3]
+  - source = csv
+myo-pose-hard:
+  - seed = [1, 2, 3]
+  - source = csv
+myo-pose:
+  - seed = [1, 2, 3]
+  - source = csv
+myo-reach-hard:
+  - seed = [1, 2, 3]
+  - source = csv
+myo-reach:
+  - seed = [1, 2, 3]
+  - source = csv
