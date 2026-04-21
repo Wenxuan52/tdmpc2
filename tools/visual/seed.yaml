@@ -1,0 +1,20 @@
+acrobot-swingup:
+  - seed = [7, 8, 9]
+cheetah-run:
+  - seed = [7, 8, 9]
+finger-spin:
+  - seed = [7, 8, 9]
+finger-turn-easy:
+  - seed = [7, 8, 9]
+finger-turn-hard:
+  - seed = [7, 8, 9]
+quadruped-walk:
+  - seed = [7, 8, 9]
+reacher-easy:
+  - seed = [7, 8, 9]
+reacher-hard:
+  - seed = [7, 8, 9]
+walker-run:
+  - seed = [7, 8, 9]
+walker-walk:
+  - seed = [7, 8, 9]
