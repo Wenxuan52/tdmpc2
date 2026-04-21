@@ -39,7 +39,8 @@ DEFAULT_LABELS = {
 X_MAX = 1_000_000
 Y_MIN, Y_MAX = -10, 1010
 GRID_STEP = 100_000
-EXPECTED_SEEDS = [7, 8, 9]
+OURS_DEFAULT_SEEDS = [7, 8, 9]
+TDMPC2_SEEDS = [1, 2, 3]
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,7 +81,7 @@ def _extract_seed_list(raw: str) -> List[int]:
 
 
 def load_ours_seed_config(path: Path, tasks: List[str]) -> Dict[str, List[int]]:
-    task_to_seeds = {task: list(EXPECTED_SEEDS) for task in tasks}
+    task_to_seeds = {task: list(OURS_DEFAULT_SEEDS) for task in tasks}
     if not path.exists():
         return task_to_seeds
 
@@ -232,7 +233,7 @@ def plot_all(args: argparse.Namespace) -> None:
     for idx, task in enumerate(VISUAL_TASKS):
         ax = axes[idx]
         for method in METHODS:
-            seed_list = ours_seed_config[task] if method == "ours" else EXPECTED_SEEDS
+            seed_list = ours_seed_config[task] if method == "ours" else TDMPC2_SEEDS
             df = load_method_task_data(method, task, args.tdmpc2_root, args.ours_root, seed_list)
             stats = summarize_mean_ci(df, step_grid, seed_list)
             mean = stats["mean"]
