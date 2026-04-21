@@ -3,8 +3,8 @@ tasks: []
 gpu_ids: []
 num_gpus: 2
 job_mode: seed
-workers_per_gpu: 3
-seeds: [1, 2, 3]
+workers_per_gpu: 2
+seeds: [4, 5, 6, 7]
 dmc_steps: 4000000
 metaworld_steps: 2000000
 default_steps: 2000000
