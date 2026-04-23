@@ -1,0 +1,15 @@
+lift-cube:
+  - seed = [1, 2, 3]
+  - source = csv
+pick-cube:
+  - seed = [1, 2, 3]
+  - source = csv
+pick-ycb:
+  - seed = [1, 2, 3]
+  - source = csv
+stack-cube:
+  - seed = [1, 2, 3]
+  - source = csv
+turn-faucet:
+  - seed = [1, 2, 3]
+  - source = csv
