@@ -128,9 +128,12 @@ def _clean_curve_df(df: pd.DataFrame, task: str) -> pd.DataFrame:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     df = df.dropna(subset=["step", "reward", "seed"])
 
+    # ManiSkill CSV step values are slightly noisy (e.g. 300077, 3900012).
+    # Snap to nearest 100k bucket so they align to the plotting grid.
+    df["step"] = (np.round(df["step"] / GRID_STEP) * GRID_STEP).astype(int)
+
     task_max_step = TASK_MAX_STEP[task]
     df = df[(df["step"] >= 0) & (df["step"] <= task_max_step)].copy()
-    df["step"] = df["step"].astype(int)
     df["seed"] = df["seed"].astype(int)
     df = df.sort_values(["seed", "step"]).drop_duplicates(["seed", "step"], keep="last")
 
