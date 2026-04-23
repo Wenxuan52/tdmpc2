@@ -1,20 +1,30 @@
 cheetah-run:
-  - seed = [4, 5, 6]
+  scratch_seed: [1, 2, 3]
+  finetune_seed: [4, 5, 6]
 hopper-hop:
-  - seed = [4, 5, 6]
+  scratch_seed: [1, 2, 3]
+  finetune_seed: [4, 5, 6]
 mw-bin-picking:
-  - seed = [4, 5, 6]
+  scratch_seed: [1, 2, 3]
+  finetune_seed: [4, 5, 6]
 mw-box-close:
-  - seed = [4, 5, 6]
+  scratch_seed: [1, 2, 3]
+  finetune_seed: [4, 5, 6]
 mw-door-lock:
-  - seed = [4, 5, 6]
+  scratch_seed: [1, 2, 3]
+  finetune_seed: [4, 5, 6]
 mw-door-unlock:
-  - seed = [4, 5, 6]
+  scratch_seed: [1, 2, 3]
+  finetune_seed: [4, 5, 6]
 mw-hand-insert:
-  - seed = [4, 5, 6]
+  scratch_seed: [1, 2, 3]
+  finetune_seed: [4, 5, 6]
 pendulum-swingup:
-  - seed = [4, 5, 6]
+  scratch_seed: [1, 2, 3]
+  finetune_seed: [4, 5, 6]
 reacher-hard:
-  - seed = [4, 5, 6]
+  scratch_seed: [1, 2, 3]
+  finetune_seed: [4, 5, 6]
 walker-run:
-  - seed = [4, 5, 6]
+  scratch_seed: [1, 2, 3]
+  finetune_seed: [4, 5, 6]

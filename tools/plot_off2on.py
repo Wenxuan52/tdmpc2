@@ -29,7 +29,8 @@ DMCONTROL_TASKS = {"cheetah-run", "hopper-hop", "pendulum-swingup", "reacher-har
 
 FINETUNED_COLOR = "#d62728"  # red
 SCRATCH_COLOR = "#9e9e9e"    # gray
-DEFAULT_SEEDS = [1, 2, 3]
+DEFAULT_SCRATCH_SEEDS = [1, 2, 3]
+DEFAULT_FINETUNE_SEEDS = [4, 5, 6]
 OUT_PATH = Path("figures/off2on_compare.pdf")
 
 
@@ -77,30 +78,52 @@ def _extract_seed_list(raw: str) -> List[int]:
     return [int(x) for x in re.findall(r"\d+", raw)]
 
 
-def load_seed_config(path: Path, tasks: List[str]) -> Dict[str, List[int]]:
-    task_to_seeds = {task: list(DEFAULT_SEEDS) for task in tasks}
+def load_seed_config(path: Path, tasks: List[str]) -> Dict[str, Dict[str, List[int]]]:
+    task_to_seeds = {
+        task: {"scratch_seed": list(DEFAULT_SCRATCH_SEEDS), "finetune_seed": list(DEFAULT_FINETUNE_SEEDS)}
+        for task in tasks
+    }
     if not path.exists():
         return task_to_seeds
 
     current_task = None
+    current_key = None
     for raw_line in path.read_text(encoding="utf-8").splitlines():
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
         if raw_line and not raw_line.startswith((" ", "\t")) and line.endswith(":"):
             current_task = line[:-1].strip()
+            current_key = None
             continue
         if current_task is None:
             continue
-        if "seed" in line:
+        if line.startswith("scratch_seed:"):
+            current_key = "scratch_seed"
             parsed = _extract_seed_list(line)
-            if parsed:
-                task_to_seeds[current_task] = parsed
+            if parsed and current_task in task_to_seeds:
+                task_to_seeds[current_task][current_key] = parsed
+            continue
+        if line.startswith("finetune_seed:"):
+            current_key = "finetune_seed"
+            parsed = _extract_seed_list(line)
+            if parsed and current_task in task_to_seeds:
+                task_to_seeds[current_task][current_key] = parsed
+            continue
+        if "seed" in line and current_key is None:
+            parsed = _extract_seed_list(line)
+            if parsed and current_task in task_to_seeds:
+                task_to_seeds[current_task]["scratch_seed"] = parsed
+                task_to_seeds[current_task]["finetune_seed"] = parsed
             continue
         if line.startswith("-"):
             parsed = _extract_seed_list(line)
-            if parsed:
-                task_to_seeds[current_task] = parsed
+            if parsed and current_task in task_to_seeds:
+                if current_key in ("scratch_seed", "finetune_seed"):
+                    task_to_seeds[current_task][current_key] = parsed
+                else:
+                    task_to_seeds[current_task]["scratch_seed"] = parsed
+                    task_to_seeds[current_task]["finetune_seed"] = parsed
     return task_to_seeds
 
 
@@ -177,10 +200,11 @@ def _task_data(
     scratch_root: Path,
     task: str,
     step_grid: np.ndarray,
-    seeds: List[int],
+    finetune_seeds: List[int],
+    scratch_seeds: List[int],
 ) -> Dict[str, np.ndarray]:
-    ft_curves = _load_task_seed_curves(finetuned_root, task, seeds, step_grid)
-    sc_curves = _load_task_seed_curves(scratch_root, task, seeds, step_grid)
+    ft_curves = _load_task_seed_curves(finetuned_root, task, finetune_seeds, step_grid)
+    sc_curves = _load_task_seed_curves(scratch_root, task, scratch_seeds, step_grid)
 
     ft_mean, ft_ci = _mean_ci95(ft_curves)
     sc_mean, sc_ci = _mean_ci95(sc_curves)
@@ -240,12 +264,17 @@ def plot(args: argparse.Namespace) -> None:
 
     all_stats: Dict[str, Dict[str, np.ndarray]] = {}
     for task, _ in TASK_ORDER:
+        seed_cfg = task_seed_cfg.get(
+            task,
+            {"scratch_seed": list(DEFAULT_SCRATCH_SEEDS), "finetune_seed": list(DEFAULT_FINETUNE_SEEDS)},
+        )
         stats = _task_data(
             args.finetuned_root,
             args.scratch_root,
             task,
             step_grid,
-            task_seed_cfg.get(task, DEFAULT_SEEDS),
+            seed_cfg["finetune_seed"],
+            seed_cfg["scratch_seed"],
         )
         all_stats[task] = stats
 
