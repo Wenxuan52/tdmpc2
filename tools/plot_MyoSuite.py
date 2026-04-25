@@ -15,22 +15,21 @@ import pandas as pd
 from handle_metaworld_multi_log import load_task_seed_logs
 
 MYOSUITE_TASKS: List[str] = [
-    "myo-key-turn-hard",
     "myo-key-turn",
-    "myo-obj-hold-hard",
+    "myo-key-turn-hard",
     "myo-obj-hold",
-    "myo-pen-twirl-hard",
+    "myo-obj-hold-hard",
     "myo-pen-twirl",
-    "myo-pose-hard",
+    "myo-pen-twirl-hard",
     "myo-pose",
-    "myo-reach-hard",
+    "myo-pose-hard",
     "myo-reach",
+    "myo-reach-hard",
 ]
 
-METHODS = ["tdmpc2", "tdmpc", "dreamerv3", "sac", "ours"]
+METHODS = ["tdmpc2", "dreamerv3", "sac", "ours"]
 METHOD_DIR = {
     "tdmpc2": "tdmpc2",
-    "tdmpc": "tdmpc",
     "dreamerv3": "dreamerv3",
     "sac": "sac",
 }
@@ -46,7 +45,6 @@ COLORS = {
 DEFAULT_LABELS = {
     "ours": "Ours",
     "tdmpc2": "TD-MPC2",
-    "tdmpc": "TD-MPC",
     "dreamerv3": "DreamerV3",
     "sac": "SAC",
 }
@@ -254,7 +252,8 @@ def load_method_task_data(
                 window_size=10,
             )
     else:
-        path = baseline_root / METHOD_DIR[method] / f"{task}.csv"
+        baseline_task = task.replace("myo-", "myo-hand-", 1)
+        path = baseline_root / METHOD_DIR[method] / f"{baseline_task}.csv"
         df = _read_baseline_task_csv(path)
     return _clean_curve_df(df)
 
