@@ -15,22 +15,21 @@ import pandas as pd
 from handle_metaworld_multi_log import load_task_seed_logs
 
 MYOSUITE_TASKS: List[str] = [
-    "myo-key-turn-hard",
     "myo-key-turn",
-    "myo-obj-hold-hard",
+    "myo-key-turn-hard",
     "myo-obj-hold",
-    "myo-pen-twirl-hard",
+    "myo-obj-hold-hard",
     "myo-pen-twirl",
-    "myo-pose-hard",
+    "myo-pen-twirl-hard",
     "myo-pose",
-    "myo-reach-hard",
+    "myo-pose-hard",
     "myo-reach",
+    "myo-reach-hard",
 ]
 
-METHODS = ["tdmpc2", "tdmpc", "dreamerv3", "sac", "ours"]
+METHODS = ["tdmpc2", "dreamerv3", "sac", "ours"]
 METHOD_DIR = {
     "tdmpc2": "tdmpc2",
-    "tdmpc": "tdmpc",
     "dreamerv3": "dreamerv3",
     "sac": "sac",
 }
@@ -46,7 +45,6 @@ COLORS = {
 DEFAULT_LABELS = {
     "ours": "Ours",
     "tdmpc2": "TD-MPC2",
-    "tdmpc": "TD-MPC",
     "dreamerv3": "DreamerV3",
     "sac": "SAC",
 }
@@ -189,14 +187,29 @@ def _sort_csv_seed_files(paths: List[Path]) -> List[Path]:
     return sorted(paths, key=key)
 
 
+def _extract_seed_from_csv_name(path: Path) -> int | None:
+    match = re.search(r"_(\d+)\.csv$", path.name)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
 def _read_ours_task_csv(task: str, csv_root: Path, seeds: List[int]) -> pd.DataFrame:
     paths = _sort_csv_seed_files(list(csv_root.glob(f"{task}_*.csv")))
     if not paths:
         return pd.DataFrame(columns=["step", "reward", "seed"])
 
-    selected_paths = paths[: len(seeds)]
+    by_seed = {seed: path for path in paths if (seed := _extract_seed_from_csv_name(path)) is not None}
+    missing = [seed for seed in seeds if seed not in by_seed]
+    if missing:
+        available = sorted(by_seed.keys())
+        raise FileNotFoundError(
+            f"{task}: missing CSV files for seeds {missing}; available suffix seeds: {available}"
+        )
+
     records: List[pd.DataFrame] = []
-    for seed, path in zip(seeds, selected_paths):
+    for seed in seeds:
+        path = by_seed[seed]
         raw = pd.read_csv(path)
         if {"step", "episode_success"}.issubset(raw.columns):
             sdf = raw[["step", "episode_success"]].rename(columns={"episode_success": "reward"}).copy()
@@ -239,7 +252,8 @@ def load_method_task_data(
                 window_size=10,
             )
     else:
-        path = baseline_root / METHOD_DIR[method] / f"{task}.csv"
+        baseline_task = task.replace("myo-", "myo-hand-", 1)
+        path = baseline_root / METHOD_DIR[method] / f"{baseline_task}.csv"
         df = _read_baseline_task_csv(path)
     return _clean_curve_df(df)
 
