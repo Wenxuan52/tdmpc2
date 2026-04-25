@@ -189,14 +189,29 @@ def _sort_csv_seed_files(paths: List[Path]) -> List[Path]:
     return sorted(paths, key=key)
 
 
+def _extract_seed_from_csv_name(path: Path) -> int | None:
+    match = re.search(r"_(\d+)\.csv$", path.name)
+    if not match:
+        return None
+    return int(match.group(1))
+
+
 def _read_ours_task_csv(task: str, csv_root: Path, seeds: List[int]) -> pd.DataFrame:
     paths = _sort_csv_seed_files(list(csv_root.glob(f"{task}_*.csv")))
     if not paths:
         return pd.DataFrame(columns=["step", "reward", "seed"])
 
-    selected_paths = paths[: len(seeds)]
+    by_seed = {seed: path for path in paths if (seed := _extract_seed_from_csv_name(path)) is not None}
+    missing = [seed for seed in seeds if seed not in by_seed]
+    if missing:
+        available = sorted(by_seed.keys())
+        raise FileNotFoundError(
+            f"{task}: missing CSV files for seeds {missing}; available suffix seeds: {available}"
+        )
+
     records: List[pd.DataFrame] = []
-    for seed, path in zip(seeds, selected_paths):
+    for seed in seeds:
+        path = by_seed[seed]
         raw = pd.read_csv(path)
         if {"step", "episode_success"}.issubset(raw.columns):
             sdf = raw[["step", "episode_success"]].rename(columns={"episode_success": "reward"}).copy()
