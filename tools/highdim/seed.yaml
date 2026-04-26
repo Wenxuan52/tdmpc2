@@ -1,0 +1,14 @@
+dog-run:
+  - seed = [1, 2, 3]
+dog-trot:
+  - seed = [1, 2, 3]
+dog-stand:
+  - seed = [1, 2, 3]
+dog-walk:
+  - seed = [1, 2, 3]
+humanoid-run:
+  - seed = [1, 2, 3]
+humanoid-stand:
+  - seed = [1, 2, 3]
+humanoid-walk:
+  - seed = [1, 2, 3]
