@@ -6,7 +6,7 @@ hopper-hop:
   finetune_seed: [4, 5, 6]
 mw-bin-picking:
   scratch_seed: [1, 2, 3]
-  finetune_seed: [4, 5, 6]
+  finetune_seed: [17, 18]
 mw-box-close:
   scratch_seed: [1, 2, 3]
   finetune_seed: [4, 5, 6]
@@ -15,7 +15,7 @@ mw-door-lock:
   finetune_seed: [4, 5, 6]
 mw-door-unlock:
   scratch_seed: [1, 2, 3]
-  finetune_seed: [4, 5, 6]
+  finetune_seed: [5, 6]
 mw-hand-insert:
   scratch_seed: [1, 2, 3]
   finetune_seed: [4, 5, 6]

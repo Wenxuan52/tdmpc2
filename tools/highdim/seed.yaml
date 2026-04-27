@@ -7,8 +7,8 @@ dog-stand:
 dog-walk:
   - seed = [1, 2, 3]
 humanoid-run:
-  - seed = [1, 2, 3]
+  - seed = [4, 5, 6]
 humanoid-stand:
-  - seed = [1, 2, 3]
+  - seed = [4, 5, 6]
 humanoid-walk:
-  - seed = [1, 2, 3]
+  - seed = [4, 5, 6]

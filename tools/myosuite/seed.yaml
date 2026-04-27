@@ -1,26 +1,26 @@
 myo-key-turn-hard:
-  - seed = [1, 2, 3]
+  - seed = [4, 5, 6, 7]
   - source = csv
 myo-key-turn:
   - seed = [1, 2, 3]
-  - source = log
+  - source = csv
 myo-obj-hold-hard:
   - seed = [1, 2, 3]
   - source = csv
 myo-obj-hold:
   - seed = [1, 2, 3]
-  - source = log
+  - source = csv
 myo-pen-twirl-hard:
   - seed = [1, 2, 3]
   - source = csv
 myo-pen-twirl:
-  - seed = [1, 2, 3]
+  - seed = [4, 5, 6, 7]
   - source = csv
 myo-pose-hard:
-  - seed = [1, 2, 3]
+  - seed = [4, 5, 6, 7]
   - source = csv
 myo-pose:
-  - seed = [1, 2, 3]
+  - seed = [4, 5, 6, 7]
   - source = csv
 myo-reach-hard:
   - seed = [1, 2, 3]
