@@ -46,7 +46,15 @@ def _steps_for_task(cfg, task: str) -> int:
 	return int(cfg.get('default_steps', cfg.get('steps', 0)) or 0)
 
 
-def _build_seed_command(cfg, task: str, seed: int, temp_replay_root: Path, reward_csv_root: Path, steps: int) -> list[str]:
+def _build_seed_command(
+	cfg,
+	task: str,
+	seed: int,
+	temp_replay_root: Path,
+	reward_csv_root: Path,
+	diff_metric_root: Path,
+	steps: int,
+) -> list[str]:
 	train_entry = str(cfg.get('train_entry', 'tdmpc2/train.py'))
 	exp_name = str(cfg.get('exp_name', 'parallel-online-diffusion'))
 	cmd = [
@@ -75,20 +83,34 @@ def _build_seed_command(cfg, task: str, seed: int, temp_replay_root: Path, rewar
 		f'save_reward_csv={str(bool(cfg.get("save_reward_csv", True))).lower()}',
 		f'reward_csv_dir={reward_csv_root.as_posix()}',
 		f'csv_eval_freq={int(cfg.get("csv_eval_freq", 50_000) or 50_000)}',
+		f'enable_diff_metrics={str(bool(cfg.get("enable_diff_metrics", False))).lower()}',
+		f'drift_log_interval={int(cfg.get("drift_log_interval", 1000) or 1000)}',
+		f'num_eval_states={int(cfg.get("num_eval_states", 1024) or 1024)}',
+		f'min_buffer_size_for_eval={int(cfg.get("min_buffer_size_for_eval", 5000) or 5000)}',
+		f'diff_metric_root={diff_metric_root.as_posix()}',
 	]
 	for override in cfg.get('common_overrides', []) or []:
 		cmd.append(str(override))
 	return cmd
 
 
-def _launch_seed_process(cfg, gpu_id: int, task: str, seed: int, temp_replay_root: Path, reward_csv_root: Path, log_root: Path):
+def _launch_seed_process(
+	cfg,
+	gpu_id: int,
+	task: str,
+	seed: int,
+	temp_replay_root: Path,
+	reward_csv_root: Path,
+	diff_metric_root: Path,
+	log_root: Path,
+):
 	repo_root = _repo_root()
 	steps = _steps_for_task(cfg, task)
 	if steps <= 0:
 		raise ValueError(f'Invalid step count {steps} for task "{task}".')
 	seed_log_dir = log_root / task
 	seed_log_dir.mkdir(parents=True, exist_ok=True)
-	cmd = _build_seed_command(cfg, task, seed, temp_replay_root, reward_csv_root, steps)
+	cmd = _build_seed_command(cfg, task, seed, temp_replay_root, reward_csv_root, diff_metric_root, steps)
 	log_fp = seed_log_dir / f'seed_{seed}.log'
 	env = os.environ.copy()
 	env['CUDA_VISIBLE_DEVICES'] = str(gpu_id)
@@ -155,7 +177,17 @@ def _build_rotated_seed_job_queues(tasks: list[str], seeds: list[int], gpu_ids: 
 	return per_gpu_queues
 
 
-def _gpu_worker_task_mode(cfg, gpu_id: int, tasks_queue: queue.Queue, final_replay_root: Path, temp_replay_root: Path, reward_csv_root: Path, log_root: Path, failures: list):
+def _gpu_worker_task_mode(
+	cfg,
+	gpu_id: int,
+	tasks_queue: queue.Queue,
+	final_replay_root: Path,
+	temp_replay_root: Path,
+	reward_csv_root: Path,
+	diff_metric_root: Path,
+	log_root: Path,
+	failures: list,
+):
 	while True:
 		try:
 			task = tasks_queue.get_nowait()
@@ -165,12 +197,29 @@ def _gpu_worker_task_mode(cfg, gpu_id: int, tasks_queue: queue.Queue, final_repl
 			start = time.time()
 			shutil.rmtree(temp_replay_root / task, ignore_errors=True)
 			failed = []
-			for seed in cfg.seeds:
-				seed = int(seed)
-				proc, log_fp, log_handle = _launch_seed_process(cfg, gpu_id, task, seed, temp_replay_root, reward_csv_root, log_root)
-				seed_failed = _wait_seed_process(seed, proc, log_fp, log_handle, gpu_id, task)
-				if seed_failed is not None:
-					failed.append(seed_failed)
+			parallel_seed_launch = bool(cfg.get('parallel_seeds_per_task', False))
+			if parallel_seed_launch:
+				procs = []
+				for seed in cfg.seeds:
+					seed = int(seed)
+					procs.append(
+						(seed,) + _launch_seed_process(
+							cfg, gpu_id, task, seed, temp_replay_root, reward_csv_root, diff_metric_root, log_root
+						)
+					)
+				for seed, proc, log_fp, log_handle in procs:
+					seed_failed = _wait_seed_process(seed, proc, log_fp, log_handle, gpu_id, task)
+					if seed_failed is not None:
+						failed.append(seed_failed)
+			else:
+				for seed in cfg.seeds:
+					seed = int(seed)
+					proc, log_fp, log_handle = _launch_seed_process(
+						cfg, gpu_id, task, seed, temp_replay_root, reward_csv_root, diff_metric_root, log_root
+					)
+					seed_failed = _wait_seed_process(seed, proc, log_fp, log_handle, gpu_id, task)
+					if seed_failed is not None:
+						failed.append(seed_failed)
 			if failed:
 				failures.append((gpu_id, task, failed))
 				print(f'[gpu {gpu_id}] task={task} failed: {failed}')
@@ -183,7 +232,16 @@ def _gpu_worker_task_mode(cfg, gpu_id: int, tasks_queue: queue.Queue, final_repl
 			tasks_queue.task_done()
 
 
-def _gpu_worker_seed_mode(cfg, gpu_id: int, seed_jobs_queue: queue.Queue, reward_csv_root: Path, temp_replay_root: Path, log_root: Path, failures: list):
+def _gpu_worker_seed_mode(
+	cfg,
+	gpu_id: int,
+	seed_jobs_queue: queue.Queue,
+	reward_csv_root: Path,
+	temp_replay_root: Path,
+	diff_metric_root: Path,
+	log_root: Path,
+	failures: list,
+):
 	while True:
 		try:
 			task, seed = seed_jobs_queue.get_nowait()
@@ -191,7 +249,9 @@ def _gpu_worker_seed_mode(cfg, gpu_id: int, seed_jobs_queue: queue.Queue, reward
 			return
 		try:
 			start = time.time()
-			proc, log_fp, log_handle = _launch_seed_process(cfg, gpu_id, task, seed, temp_replay_root, reward_csv_root, log_root)
+			proc, log_fp, log_handle = _launch_seed_process(
+				cfg, gpu_id, task, seed, temp_replay_root, reward_csv_root, diff_metric_root, log_root
+			)
 			seed_failed = _wait_seed_process(seed, proc, log_fp, log_handle, gpu_id, task)
 			if seed_failed is not None:
 				failures.append((gpu_id, task, [seed_failed]))
@@ -233,6 +293,7 @@ def main():
 	final_replay_root = (repo_root / Path(str(cfg.get('replay_save_dir', './replays')))).resolve()
 	temp_replay_root = final_replay_root / '_tmp'
 	reward_csv_root = final_replay_root / '_csv'
+	diff_metric_root = final_replay_root
 	log_root = final_replay_root / '_logs'
 	final_replay_root.mkdir(parents=True, exist_ok=True)
 	temp_replay_root.mkdir(parents=True, exist_ok=True)
@@ -247,6 +308,7 @@ def main():
 	print(f'Final replay dir: {final_replay_root}')
 	print(f'Temporary replay dir: {temp_replay_root}')
 	print(f'Reward CSV dir: {reward_csv_root}')
+	print(f'DIFF metric CSV dir: {diff_metric_root}')
 
 	work_queue = queue.Queue()
 	seed_job_queues = None
@@ -266,13 +328,13 @@ def main():
 			if job_mode == 'task':
 				thread = threading.Thread(
 					target=_gpu_worker_task_mode,
-					args=(cfg, gpu_id, work_queue, final_replay_root, temp_replay_root, reward_csv_root, log_root, failures),
+					args=(cfg, gpu_id, work_queue, final_replay_root, temp_replay_root, reward_csv_root, diff_metric_root, log_root, failures),
 					daemon=False,
 				)
 			else:
 				thread = threading.Thread(
 					target=_gpu_worker_seed_mode,
-					args=(cfg, gpu_id, seed_job_queues[gpu_id], reward_csv_root, temp_replay_root, log_root, failures),
+					args=(cfg, gpu_id, seed_job_queues[gpu_id], reward_csv_root, temp_replay_root, diff_metric_root, log_root, failures),
 					daemon=False,
 				)
 			thread.start()

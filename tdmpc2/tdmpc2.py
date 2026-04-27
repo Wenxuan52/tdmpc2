@@ -152,11 +152,35 @@ class TDMPC2(torch.nn.Module):
 			task = torch.tensor([task], device=self.device)
 		if self.cfg.mpc:
 			return self.plan(obs, t0=t0, eval_mode=eval_mode, task=task).cpu()
+		return self.act_policy(obs.squeeze(0), eval_mode=eval_mode, task=task)
+
+	@torch.no_grad()
+	def act_policy(self, obs, eval_mode=True, task=None):
+		"""Return policy-network action for a single observation."""
+		obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
+		if task is not None and not torch.is_tensor(task):
+			task = torch.tensor([task], device=self.device)
 		z = self.model.encode(obs, task)
 		action, info = self.model.pi(z, task)
 		if eval_mode:
 			action = info["mean"]
-		return action[0].cpu()
+		return action[0].clamp(-1, 1).cpu()
+
+	@torch.no_grad()
+	def act_mppi(self, obs, t0=False, eval_mode=True, task=None):
+		"""Return MPPI planner action for a single observation."""
+		obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
+		if task is not None and not torch.is_tensor(task):
+			task = torch.tensor([task], device=self.device)
+		return self._plan(obs, t0=t0, eval_mode=eval_mode, task=task).clamp(-1, 1).cpu()
+
+	@torch.no_grad()
+	def act_diffusion(self, obs, t0=False, eval_mode=True, task=None):
+		"""Return diffusion planner action for a single observation."""
+		obs = obs.to(self.device, non_blocking=True).unsqueeze(0)
+		if task is not None and not torch.is_tensor(task):
+			task = torch.tensor([task], device=self.device)
+		return self._diffusion_plan(obs, t0=t0, eval_mode=eval_mode, task=task).clamp(-1, 1).cpu()
 
 	@torch.no_grad()
 	def _estimate_value(self, z, actions, task):

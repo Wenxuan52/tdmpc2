@@ -1,4 +1,5 @@
 import csv
+import random
 from time import time
 from pathlib import Path
 
@@ -39,6 +40,34 @@ class OnlineTrainer(Trainer):
 					writer.writerow(['step', 'episode_success'])
 				else:
 					writer.writerow(['step', 'episode_reward'])
+		self._enable_diff_metrics = bool(getattr(self.cfg, 'enable_diff_metrics', False))
+		self._drift_log_interval = int(getattr(self.cfg, 'drift_log_interval', 1000) or 1000)
+		self._num_eval_states = int(getattr(self.cfg, 'num_eval_states', 1024) or 1024)
+		self._min_buffer_size_for_eval = int(getattr(self.cfg, 'min_buffer_size_for_eval', 5000) or 5000)
+		self._planner_for_drift = str(getattr(self.cfg, 'planner_type', 'mppi')).lower()
+		self._eval_seed = int(getattr(self.cfg, 'drift_eval_seed', 0) or 0)
+		self._eval_states = None
+		self._prev_actions = None
+		self._diff_metric_csv_fp = None
+		self._diff_metric_fieldnames = [
+			'step',
+			'planner_gap/mppi_to_policy',
+			'planner_gap/diffusion_to_policy',
+			'action_drift/pi',
+			'action_drift/mppi',
+			'action_drift/diffusion',
+		]
+		if self._enable_diff_metrics:
+			base_metric_root = str(getattr(self.cfg, 'diff_metric_root', '') or '').strip()
+			if not base_metric_root:
+				base_metric_root = str(getattr(self.cfg, 'replay_save_dir', '') or '.')
+			metric_root = Path(base_metric_root)
+			metric_root.mkdir(parents=True, exist_ok=True)
+			task_name = str(self.cfg.task).replace('/', '_')
+			self._diff_metric_csv_fp = metric_root / f'DIFF_metric_{task_name}_seed{self.cfg.seed}.csv'
+			with open(self._diff_metric_csv_fp, 'w', newline='') as f:
+				writer = csv.DictWriter(f, fieldnames=self._diff_metric_fieldnames)
+				writer.writeheader()
 
 	def _append_reward_csv(self, step, reward):
 		if self._reward_csv_fp is None:
@@ -53,6 +82,104 @@ class OnlineTrainer(Trainer):
 		with open(self._reward_csv_fp, 'a', newline='') as f:
 			writer = csv.writer(f)
 			writer.writerow([int(step), float(success)])
+
+	def _try_build_eval_states(self):
+		if self._eval_states is not None:
+			return
+		if self._step < self._min_buffer_size_for_eval:
+			return
+		chunks = []
+		remaining = self._num_eval_states
+		while remaining > 0:
+			obs, *_ = self.buffer.sample()
+			cur = obs[0].detach().cpu()
+			if cur.ndim == 1:
+				cur = cur.unsqueeze(0)
+			take = min(remaining, cur.shape[0])
+			chunks.append(cur[:take])
+			remaining -= take
+		self._eval_states = torch.cat(chunks, dim=0)
+
+	@staticmethod
+	def _mean_squared_action_diff(a, b):
+		return ((a - b) ** 2).mean().item()
+
+	@torch.no_grad()
+	def _collect_actions_for_drift(self, states):
+		was_training = self.agent.model.training
+		self.agent.model.eval()
+		torch.manual_seed(self._eval_seed)
+		np.random.seed(self._eval_seed)
+		random.seed(self._eval_seed)
+		actions = {
+			'pi': [],
+			'mppi': [],
+			'diff': [],
+		}
+		for state in states:
+			actions['pi'].append(self.agent.act_policy(state, eval_mode=True))
+			if self._planner_for_drift in {'mppi', 'both'}:
+				actions['mppi'].append(self.agent.act_mppi(state, t0=True, eval_mode=True))
+			if self._planner_for_drift in {'diffusion', 'both'}:
+				actions['diff'].append(self.agent.act_diffusion(state, t0=True, eval_mode=True))
+		if was_training:
+			self.agent.model.train()
+		for key, vals in actions.items():
+			if vals:
+				actions[key] = torch.stack(vals, dim=0).clamp(-1.0, 1.0)
+			else:
+				actions[key] = None
+		return actions
+
+	def _compute_action_drift_metrics(self, current_actions):
+		metrics = {}
+		if current_actions.get('mppi') is not None:
+			metrics['planner_gap/mppi_to_policy'] = self._mean_squared_action_diff(
+				current_actions['mppi'], current_actions['pi'])
+		if current_actions.get('diff') is not None:
+			metrics['planner_gap/diffusion_to_policy'] = self._mean_squared_action_diff(
+				current_actions['diff'], current_actions['pi'])
+		if self._prev_actions is not None:
+			metrics['action_drift/pi'] = self._mean_squared_action_diff(current_actions['pi'], self._prev_actions['pi'])
+			if current_actions.get('mppi') is not None and self._prev_actions.get('mppi') is not None:
+				metrics['action_drift/mppi'] = self._mean_squared_action_diff(
+					current_actions['mppi'], self._prev_actions['mppi'])
+			if current_actions.get('diff') is not None and self._prev_actions.get('diff') is not None:
+				metrics['action_drift/diffusion'] = self._mean_squared_action_diff(
+					current_actions['diff'], self._prev_actions['diff'])
+		return metrics
+
+	def _append_diff_metric_csv(self, step, metrics):
+		if self._diff_metric_csv_fp is None:
+			return
+		row = {'step': int(step)}
+		for key in self._diff_metric_fieldnames[1:]:
+			row[key] = float(metrics[key]) if key in metrics else float('nan')
+		with open(self._diff_metric_csv_fp, 'a', newline='') as f:
+			writer = csv.DictWriter(f, fieldnames=self._diff_metric_fieldnames)
+			writer.writerow(row)
+
+	def _maybe_log_diff_metrics(self, train_metrics):
+		if not self._enable_diff_metrics:
+			return
+		if self._drift_log_interval <= 0 or self._step == 0 or self._step % self._drift_log_interval != 0:
+			return
+		self._try_build_eval_states()
+		if self._eval_states is None:
+			return
+		current_actions = self._collect_actions_for_drift(self._eval_states)
+		metrics = self._compute_action_drift_metrics(current_actions)
+		self._prev_actions = {
+			k: (v.clone() if v is not None else None)
+			for k, v in current_actions.items()
+		}
+		if not metrics:
+			return
+		self._append_diff_metric_csv(self._step, metrics)
+		train_metrics.update(metrics)
+		log_payload = dict(metrics)
+		log_payload.update(self.common_metrics())
+		self.logger.log(log_payload, 'train')
 
 	def common_metrics(self):
 		"""Return a dictionary of current metrics."""
@@ -173,6 +300,7 @@ class OnlineTrainer(Trainer):
 				for _ in range(num_updates):
 					_train_metrics = self.agent.update(self.buffer)
 				train_metrics.update(_train_metrics)
+				self._maybe_log_diff_metrics(train_metrics)
 
 			self._step += 1
 
