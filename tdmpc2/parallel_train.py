@@ -91,6 +91,10 @@ def _build_seed_command(
 	]
 	for override in cfg.get('common_overrides', []) or []:
 		cmd.append(str(override))
+	wandb_name_template = str(cfg.get('wandb_name_template', '') or '').strip()
+	if wandb_name_template:
+		wandb_name = wandb_name_template.format(task=task, seed=seed)
+		cmd.append(f'wandb_name={wandb_name}')
 	return cmd
 
 
