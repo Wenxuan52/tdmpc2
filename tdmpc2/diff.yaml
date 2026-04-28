@@ -3,12 +3,12 @@ tasks: []
 gpu_ids: []
 num_gpus: 8
 job_mode: task
-workers_per_gpu: 1
+workers_per_gpu: 3
 parallel_seeds_per_task: true
 seeds: [1, 2, 3]
-dmc_steps: 14000000
-metaworld_steps: 14000000
-default_steps: 14000000
+dmc_steps: 1000000
+metaworld_steps: 1000000
+default_steps: 1000000
 planner_type: diffusion
 obs: state
 compile: true
@@ -37,3 +37,4 @@ num_eval_states: 1024
 min_buffer_size_for_eval: 5000
 common_overrides:
   - online_save_root=/media/datasets/cheliu21/cxy_worldmodel/online_checkpoint
+  - contrastive_beta=0.0
