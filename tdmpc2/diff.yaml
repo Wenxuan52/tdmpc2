@@ -2,7 +2,7 @@ task_set: mt80
 tasks: []
 gpu_ids: []
 num_gpus: 8
-job_mode: task
+job_mode: seed
 workers_per_gpu: 3
 parallel_seeds_per_task: true
 seeds: [1, 2, 3]
