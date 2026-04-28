@@ -30,6 +30,7 @@ exp_name: diff-metric
 save_agent: true
 save_video: false
 enable_wandb: true
+wandb_name_template: diff_metric_{task}_seed{seed}
 enable_diff_metrics: true
 drift_log_interval: 1000
 num_eval_states: 1024
