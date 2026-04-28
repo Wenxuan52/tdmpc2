@@ -3,7 +3,7 @@ tasks: []
 gpu_ids: []
 num_gpus: 8
 job_mode: task
-workers_per_gpu: 3
+workers_per_gpu: 1
 parallel_seeds_per_task: true
 seeds: [1, 2, 3]
 dmc_steps: 1000000

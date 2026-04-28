@@ -162,23 +162,28 @@ def _resolve_job_mode(cfg) -> str:
 	return mode
 
 
-def _build_rotated_seed_job_queues(tasks: list[str], seeds: list[int], gpu_ids: list[int]) -> dict[int, queue.Queue]:
-	"""
-	Build per-GPU seed-job queues with seed-wise GPU rotation:
-	- seed index 0 -> base task-to-gpu mapping by task index
-	- seed index 1 -> shifted by +1 GPU
-	- seed index 2 -> shifted by +2 GPU
-	...
-	This spreads a task's seeds across different GPUs whenever possible.
-	"""
+def _build_task_pinned_seed_job_queues(tasks: list[str], seeds: list[int], gpu_ids: list[int]) -> dict[int, queue.Queue]:
+	"""Build per-GPU seed-job queues while pinning each task to exactly one GPU."""
 	if not gpu_ids:
-		raise ValueError('No GPU IDs available for rotated seed scheduling.')
+		raise ValueError('No GPU IDs available for seed scheduling.')
 	per_gpu_queues = {gpu_id: queue.Queue() for gpu_id in gpu_ids}
 	num_gpus = len(gpu_ids)
 	for task_idx, task in enumerate(tasks):
-		for seed_idx, seed in enumerate(seeds):
-			target_gpu = gpu_ids[(task_idx + seed_idx) % num_gpus]
+		target_gpu = gpu_ids[task_idx % num_gpus]
+		for seed in seeds:
 			per_gpu_queues[target_gpu].put((task, int(seed)))
+	return per_gpu_queues
+
+
+def _build_task_job_queues(tasks: list[str], gpu_ids: list[int]) -> dict[int, queue.Queue]:
+	"""Build per-GPU task queues while pinning each task to exactly one GPU."""
+	if not gpu_ids:
+		raise ValueError('No GPU IDs available for task scheduling.')
+	per_gpu_queues = {gpu_id: queue.Queue() for gpu_id in gpu_ids}
+	num_gpus = len(gpu_ids)
+	for task_idx, task in enumerate(tasks):
+		target_gpu = gpu_ids[task_idx % num_gpus]
+		per_gpu_queues[target_gpu].put(task)
 	return per_gpu_queues
 
 
@@ -310,18 +315,22 @@ def main():
 	print(f'Per-task seeds: {[int(seed) for seed in cfg.seeds]}')
 	print(f'Job mode: {job_mode}')
 	print(f'Workers per GPU: {workers_per_gpu}')
+	if job_mode == 'task' and workers_per_gpu != 1:
+		print('[task-mode] forcing workers_per_gpu=1 to keep one GPU worker queue and stable task->GPU pinning.')
 	print(f'Final replay dir: {final_replay_root}')
 	print(f'Temporary replay dir: {temp_replay_root}')
 	print(f'Reward CSV dir: {reward_csv_root}')
 	print(f'DIFF metric CSV dir: {diff_metric_root}')
 
-	work_queue = queue.Queue()
+	work_queues = None
 	seed_job_queues = None
 	if job_mode == 'task':
-		for task in tasks:
-			work_queue.put(task)
+		work_queues = _build_task_job_queues(tasks, gpu_ids)
+		for gpu_id in gpu_ids:
+			queued = list(work_queues[gpu_id].queue)
+			print(f'[task-schedule] gpu={gpu_id} tasks={queued}')
 	else:
-		seed_job_queues = _build_rotated_seed_job_queues(tasks, [int(seed) for seed in cfg.seeds], gpu_ids)
+		seed_job_queues = _build_task_pinned_seed_job_queues(tasks, [int(seed) for seed in cfg.seeds], gpu_ids)
 		for gpu_id in gpu_ids:
 			queued = list(seed_job_queues[gpu_id].queue)
 			print(f'[seed-schedule] gpu={gpu_id} jobs={queued}')
@@ -329,11 +338,14 @@ def main():
 	failures = []
 	threads = []
 	for gpu_id in gpu_ids:
-		for _ in range(workers_per_gpu):
+		per_gpu_workers = workers_per_gpu
+		if job_mode == 'task':
+			per_gpu_workers = 1
+		for _ in range(per_gpu_workers):
 			if job_mode == 'task':
 				thread = threading.Thread(
 					target=_gpu_worker_task_mode,
-					args=(cfg, gpu_id, work_queue, final_replay_root, temp_replay_root, reward_csv_root, diff_metric_root, log_root, failures),
+					args=(cfg, gpu_id, work_queues[gpu_id], final_replay_root, temp_replay_root, reward_csv_root, diff_metric_root, log_root, failures),
 					daemon=False,
 				)
 			else:
