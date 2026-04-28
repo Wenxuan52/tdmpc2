@@ -94,7 +94,8 @@ def _build_seed_command(
 	wandb_name_template = str(cfg.get('wandb_name_template', '') or '').strip()
 	if wandb_name_template:
 		wandb_name = wandb_name_template.format(task=task, seed=seed)
-		cmd.append(f'wandb_name={wandb_name}')
+		override_key = 'wandb_name' if 'wandb_name' in cfg else '+wandb_name'
+		cmd.append(f'{override_key}={wandb_name}')
 	return cmd
 
 
