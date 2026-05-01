@@ -1,0 +1,29 @@
+MPPI:
+  acrobot-swingup: [7, 8, 9]
+  cheetah-run: [7, 8, 9]
+  dog-trot: [7, 8, 9]
+  humanoid-walk: [7, 8, 9]
+  mw-button-press-wall: [7, 8, 9]
+  mw-handle-pull-side: [7, 8, 9]
+  mw-pick-place: [7, 8, 9]
+  mw-window-open: [7, 8, 9]
+
+Beta0.0:
+  acrobot-swingup: [1, 2, 3]
+  cheetah-run: [1, 2, 3]
+  dog-trot: [1, 2, 3]
+  humanoid-walk: [1, 2, 3]
+  mw-button-press-wall: [1, 2, 3]
+  mw-handle-pull-side: [1, 2, 3]
+  mw-pick-place: [1, 2, 3]
+  mw-window-open: [1, 2, 3]
+
+Beta0.1:
+  acrobot-swingup: [14, 15, 16]
+  cheetah-run: [14, 15, 16]
+  dog-trot: [14, 15, 16]
+  humanoid-walk: [14, 15, 16]
+  mw-button-press-wall: [14, 15, 16]
+  mw-handle-pull-side: [14, 15, 16]
+  mw-pick-place: [14, 15, 16]
+  mw-window-open: [14, 15, 16]
