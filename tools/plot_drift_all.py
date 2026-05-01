@@ -15,6 +15,8 @@ SEED_CONFIG = Path("tools/diff/all_seed.yaml")
 PLOT_MODE = "Drift"  # choose from: "Drift", "Gap"
 
 EPS = 1e-8
+POLICY_DENOM_FLOOR = 1e-3
+DRIFT_RATIO_CAP = 5.0
 X_MAX = 1_000_000
 X_TICKS = np.linspace(0, X_MAX, 6)
 X_TICK_LABELS = [f"{v:.1f}" for v in np.linspace(0.0, 1.0, 6)]
@@ -100,7 +102,7 @@ def _mean_se(arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return mean, se
 
 
-def _collect_samples(tasks: List[str], method: str, mode: str, seed_cfg: Dict[str, Dict[str, List[int]]], x_grid: np.ndarray) -> np.ndarray:
+def _collect_samples(tasks: List[str], method: str, mode: str, seed_cfg: Dict[str, Dict[str, List[int]]], x_grid: np.ndarray, domain: str) -> np.ndarray:
     samples: List[np.ndarray] = []
     for task in tasks:
         for seed in seed_cfg.get(method, {}).get(task, []):
@@ -110,7 +112,12 @@ def _collect_samples(tasks: List[str], method: str, mode: str, seed_cfg: Dict[st
             if mode == "Drift":
                 plan = _interp(df, METHOD_META[method]["drift_col"], x_grid)
                 policy = _interp(df, "action_drift/pi", x_grid)
-                series = plan / (policy + EPS)
+                finite_policy = policy[np.isfinite(policy) & (policy > 0)]
+                adaptive_floor = float(np.nanpercentile(finite_policy, 10)) if finite_policy.size else POLICY_DENOM_FLOOR
+                denom_floor = max(POLICY_DENOM_FLOOR, adaptive_floor)
+                series = plan / np.maximum(policy + EPS, denom_floor)
+                if domain == "DMC":
+                    series = np.clip(series, 0.0, DRIFT_RATIO_CAP)
             else:
                 series = _interp(df, METHOD_META[method]["gap_col"], x_grid)
             if np.isfinite(series).any():
@@ -146,12 +153,12 @@ def main() -> None:
     x_grid = np.linspace(0, X_MAX, 1001, dtype=float)
 
     fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
-    domain_cfg = [("DMC aggregate", DM_TASKS), ("MetaWorld aggregate", MW_TASKS)]
+    domain_cfg = [("DMC", "DMC aggregate", DM_TASKS), ("MetaWorld", "MetaWorld aggregate", MW_TASKS)]
 
-    for ax, (title, tasks) in zip(axes, domain_cfg):
+    for ax, (domain_name, title, tasks) in zip(axes, domain_cfg):
         all_max = []
         for method in METHODS_TO_PLOT:
-            arr = _collect_samples(tasks, method, PLOT_MODE, seed_cfg, x_grid)
+            arr = _collect_samples(tasks, method, PLOT_MODE, seed_cfg, x_grid, domain_name)
             mean, se = _mean_se(arr)
             ax.plot(x_grid, mean, lw=2.0, color=METHOD_META[method]["color"], alpha=MEAN_ALPHA, label=METHOD_META[method]["label"])
             ax.fill_between(x_grid, mean - se, mean + se, color=METHOD_META[method]["color"], alpha=0.18)
