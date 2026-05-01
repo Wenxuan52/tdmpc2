@@ -238,21 +238,36 @@ def _read_ours_task_csv(task: str, csv_root: Path, seeds: List[int]) -> pd.DataF
     if not paths:
         return pd.DataFrame(columns=["step", "reward", "seed"])
 
-    # We intentionally map files to configured seeds by sorted file order so the
-    # plotting seed selection remains stable even when filename suffixes are not
-    # exactly equal to semantic seed id.
-    selected_paths = paths[: len(seeds)]
+    path_by_seed = {}
+    for path in paths:
+        match = re.search(r"_(\d+)\.csv$", path.name)
+        if match:
+            path_by_seed[int(match.group(1))] = path
+
+    missing_seeds = [seed for seed in seeds if seed not in path_by_seed]
+    if missing_seeds:
+        raise ValueError(
+            f"task={task} missing csv for configured seeds={missing_seeds}; "
+            f"available_files={[p.name for p in paths]}"
+        )
+
     records: List[pd.DataFrame] = []
-    for seed, path in zip(seeds, selected_paths):
+    for seed in seeds:
+        path = path_by_seed[seed]
         raw = pd.read_csv(path)
         if {"step", "episode_success"}.issubset(raw.columns):
             sdf = raw[["step", "episode_success"]].rename(columns={"episode_success": "reward"}).copy()
         elif {"step", "success"}.issubset(raw.columns):
             sdf = raw[["step", "success"]].rename(columns={"success": "reward"}).copy()
+        elif {"step", "episode_reward"}.issubset(raw.columns):
+            sdf = raw[["step", "episode_reward"]].rename(columns={"episode_reward": "reward"}).copy()
         elif {"step", "reward"}.issubset(raw.columns):
             sdf = raw[["step", "reward"]].copy()
         else:
-            raise ValueError(f"{path} missing columns: expected step with episode_success/success/reward")
+            raise ValueError(
+                f"task={task} file={path} missing required columns: expected step with "
+                f"episode_success/success/episode_reward/reward, got={list(raw.columns)}"
+            )
 
         sdf["seed"] = seed
         max_abs = np.nanmax(np.abs(pd.to_numeric(sdf["reward"], errors="coerce")))
