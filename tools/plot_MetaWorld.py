@@ -252,7 +252,10 @@ def _read_ours_task_csv(task: str, csv_root: Path, seeds: List[int]) -> pd.DataF
         elif {"step", "reward"}.issubset(raw.columns):
             sdf = raw[["step", "reward"]].copy()
         else:
-            raise ValueError(f"{path} missing columns: expected step with episode_success/success/reward")
+            raise ValueError(
+                f"task={task} file={path} missing required columns: expected step with "
+                f"episode_success/success/reward, got={list(raw.columns)}"
+            )
 
         sdf["seed"] = seed
         max_abs = np.nanmax(np.abs(pd.to_numeric(sdf["reward"], errors="coerce")))
