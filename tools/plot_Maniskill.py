@@ -199,9 +199,18 @@ def _read_ours_task_csv(task: str, csv_root: Path, seeds: List[int]) -> pd.DataF
     if not paths:
         return pd.DataFrame(columns=["step", "reward", "seed"])
 
-    selected_paths = paths[: len(seeds)]
+    path_by_seed: Dict[int, Path] = {}
+    for path in paths:
+        match = re.search(r"_(\d+)\.csv$", path.name)
+        if match:
+            path_by_seed[int(match.group(1))] = path
+
+    selected_pairs = [(seed, path_by_seed[seed]) for seed in seeds if seed in path_by_seed]
+    if not selected_pairs:
+        return pd.DataFrame(columns=["step", "reward", "seed"])
+
     records: List[pd.DataFrame] = []
-    for seed, path in zip(seeds, selected_paths):
+    for seed, path in selected_pairs:
         raw = pd.read_csv(path)
         if {"step", "episode_success"}.issubset(raw.columns):
             sdf = raw[["step", "episode_success"]].rename(columns={"episode_success": "reward"}).copy()
