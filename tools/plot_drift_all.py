@@ -13,6 +13,7 @@ import pandas as pd
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/all_seed.yaml")
 PLOT_MODE = "Drift"  # choose from: "Drift", "Gap"
+EXCLUDE_BETA01_HUMANOID_WALK = False  # can be overridden by `exclude_beta01_humanoid_walk` in seed config
 
 EPS = 1e-8
 POLICY_DENOM_FLOOR = 1e-3
@@ -71,6 +72,24 @@ def _parse_seed_config(path: Path) -> Dict[str, Dict[str, List[int]]]:
     return out
 
 
+def _parse_bool_flag(path: Path, key: str, default: bool) -> bool:
+    if not path.exists():
+        return default
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or ":" not in line:
+            continue
+        left, right = line.split(":", 1)
+        if left.strip() != key:
+            continue
+        val = right.strip().lower()
+        if val in {"true", "1", "yes", "on"}:
+            return True
+        if val in {"false", "0", "no", "off"}:
+            return False
+    return default
+
+
 def _load_task_seed(task: str, seed: int) -> pd.DataFrame:
     path = DATA_ROOT / f"DIFF_metric_{task}_seed{seed}.csv"
     if not path.exists():
@@ -105,6 +124,8 @@ def _mean_se(arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 def _collect_samples(tasks: List[str], method: str, mode: str, seed_cfg: Dict[str, Dict[str, List[int]]], x_grid: np.ndarray, domain: str) -> np.ndarray:
     samples: List[np.ndarray] = []
     for task in tasks:
+        if domain == "DMC" and method == "Beta0.1" and EXCLUDE_BETA01_HUMANOID_WALK and task == "humanoid-walk":
+            continue
         for seed in seed_cfg.get(method, {}).get(task, []):
             df = _load_task_seed(task, seed)
             if df.empty:
@@ -143,6 +164,7 @@ def _style_axes(ax: plt.Axes, title: str, y_label: str, y_lim: tuple[float, floa
 
 
 def main() -> None:
+    global EXCLUDE_BETA01_HUMANOID_WALK
     if PLOT_MODE not in {"Drift", "Gap"}:
         raise ValueError("PLOT_MODE must be 'Drift' or 'Gap'")
 
@@ -150,6 +172,9 @@ def main() -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     seed_cfg = _parse_seed_config(SEED_CONFIG)
+    EXCLUDE_BETA01_HUMANOID_WALK = _parse_bool_flag(
+        SEED_CONFIG, key="exclude_beta01_humanoid_walk", default=EXCLUDE_BETA01_HUMANOID_WALK
+    )
     x_grid = np.linspace(0, X_MAX, 1001, dtype=float)
 
     fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
