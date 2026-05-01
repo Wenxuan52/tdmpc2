@@ -187,14 +187,14 @@ def main() -> None:
                     for spine in ax.spines.values():
                         spine.set_visible(False)
 
-                    if c == 0:
-                        ax.set_ylabel("selected-action squared difference", fontsize=FONT["axis_label"])
                     if r == 3:
                         ax.set_xlabel("Time steps (1M)", fontsize=FONT["axis_label"])
                         ax.set_xticks(X_TICKS)
                         ax.set_xticklabels(X_TICK_LABELS, fontsize=FONT["ticks"])
                     else:
                         ax.tick_params(axis="x", labelsize=FONT["ticks"])
+
+            fig.supylabel("selected-action squared difference", fontsize=FONT["axis_label"])
 
             handles, labels = axes[0, 0].get_legend_handles_labels()
             if handles:
