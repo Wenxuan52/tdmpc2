@@ -14,7 +14,7 @@ import pandas as pd
 
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/all_seed.yaml")
-PLOT_MODE = "Gap"  # choose from: "Drift", "Gap"
+PLOT_MODE = "Gap"  # choose from: "Drift", "Gap", "All"
 EXCLUDE_BETA01_HUMANOID_WALK = True  # can be overridden by `exclude_beta01_humanoid_walk` in seed config
 
 EPS = 1e-8
@@ -26,7 +26,7 @@ X_TICK_LABELS = [f"{v:.1f}" for v in np.linspace(0.0, 1.0, 6)]
 DM_TASKS = ["acrobot-swingup", "cheetah-run", "dog-trot", "humanoid-walk"]
 MW_TASKS = ["mw-button-press-wall", "mw-handle-pull-side", "mw-pick-place", "mw-window-open"]
 
-FONT = {"title": 20, "axis_label": 18, "ticks": 15, "legend": 16}
+FONT = {"title": 20, "axis_label": 18, "ticks": 15, "legend": 16, "big_title": 24, "big_legend": 18}
 MEAN_ALPHA = 0.75
 EMA_WINDOW = 25
 EMA_ALPHA = 0.3
@@ -104,7 +104,7 @@ def _load_task_seed(task: str, seed: int) -> pd.DataFrame:
 
 def _shade_color(hex_color: str, level: int, total_levels: int = 4) -> str:
     base = np.array(mcolors.to_rgb(hex_color))
-    mix = 0.75 - 0.5 * (level / max(total_levels - 1, 1))
+    mix = 0.88 - 0.58 * (level / max(total_levels - 1, 1))
     return mcolors.to_hex(base * (1.0 - mix) + np.ones(3) * mix)
 
 
@@ -178,7 +178,7 @@ def _style_axes(ax: plt.Axes, title: str, y_label: str, y_lim: tuple[float, floa
     ax.set_ylim(*y_lim)
     ax.tick_params(axis="y", labelsize=FONT["ticks"])
     ax.set_facecolor("#f2f2f2")
-    ax.grid(color="#d9d9d9", linewidth=3.0)
+    ax.grid(color="#d9d9d9", linewidth=3.0, axis="both")
     for s in ax.spines.values():
         s.set_visible(False)
 
@@ -206,98 +206,93 @@ def _collect_gap_stage_values(tasks: List[str], method: str, seed_cfg: Dict[str,
     return [np.asarray(v, dtype=float) for v in grouped]
 
 
+
+def _plot_gap_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], domain_name: str, show_y_label: bool, title: str = "") -> None:
+    centers = np.arange(len(METHODS_TO_PLOT), dtype=float)
+    width = 0.16
+    offsets = np.array([-0.24, -0.08, 0.08, 0.24])
+    all_values = []
+    for m_idx, method in enumerate(METHODS_TO_PLOT):
+        stage_vals = _collect_gap_stage_values(tasks, method, seed_cfg, domain_name)
+        for s_idx, values in enumerate(stage_vals):
+            if values.size == 0:
+                continue
+            pos = centers[m_idx] + offsets[s_idx]
+            color = _shade_color(METHOD_META[method]["color"], s_idx, len(STEP_STAGES))
+            ax.boxplot(values, positions=[pos], widths=width, patch_artist=True,
+                boxprops=dict(facecolor=color, edgecolor="black", linewidth=1.8),
+                medianprops=dict(color="black", linewidth=1.8), whiskerprops=dict(color="black", linewidth=1.8),
+                capprops=dict(color="black", linewidth=1.8),
+                flierprops=dict(marker="D", markersize=4, markerfacecolor="#666", markeredgecolor="#666", alpha=0.7))
+            all_values.append(values)
+    if all_values:
+        merged = np.concatenate(all_values)
+        y_min, y_max = float(np.nanmin(merged)), float(np.nanmax(merged))
+        pad = max(0.03 * (y_max - y_min), 1e-3)
+        y_min, y_max = y_min - pad, y_max + pad
+    else:
+        y_min, y_max = (0.0, 0.05)
+    ax.set_xticks(centers)
+    ax.set_xticklabels(["MPPI", "Beta0.0", "Beta0.1"], fontsize=FONT["ticks"])
+    _style_axes(ax, title, "Planner Policy Gap", (y_min, y_max), show_y_label=show_y_label, use_time_axis=False)
+    ax.grid(axis="x", visible=False)
+    gray_handles = [Patch(facecolor=_shade_color("#666666", i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
+    ax.legend(handles=gray_handles, fontsize=FONT["legend"], loc="upper right", frameon=True)
+
+
+def _plot_drift_line(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], x_grid: np.ndarray, domain_name: str, show_y_label: bool, title: str = "") -> None:
+    all_min, all_max = [], []
+    for method in METHODS_TO_PLOT:
+        arr = _collect_samples(tasks, method, "Drift", seed_cfg, x_grid, domain_name)
+        mean, se = _mean_se(arr)
+        mean, se = _ema_smooth(mean), _ema_smooth(se)
+        ax.plot(x_grid, mean, lw=2.0, color=METHOD_META[method]["color"], alpha=MEAN_ALPHA, label=METHOD_META[method]["label"])
+        ax.fill_between(x_grid, mean - se, mean + se, color=METHOD_META[method]["color"], alpha=0.18)
+        finite = mean[np.isfinite(mean)]
+        if finite.size:
+            all_min.append(float(np.min(finite))); all_max.append(float(np.max(finite)))
+    if all_min and all_max:
+        span = max(all_max) - min(all_min); pad = max(0.03 * span, 1e-3)
+        y_min, y_max = min(all_min) - pad, max(all_max) + pad
+    else:
+        y_min, y_max = (-0.05, 0.05)
+    _style_axes(ax, title, "Normalized Drift", (y_min, y_max), show_y_label=show_y_label, use_time_axis=True)
+
 def main() -> None:
     global EXCLUDE_BETA01_HUMANOID_WALK
-    if PLOT_MODE not in {"Drift", "Gap"}:
-        raise ValueError("PLOT_MODE must be 'Drift' or 'Gap'")
+    if PLOT_MODE not in {"Drift", "Gap", "All"}:
+        raise ValueError("PLOT_MODE must be 'Drift', 'Gap' or 'All'")
 
     out_path = Path(f"figures/drift_all_{PLOT_MODE}.pdf")
     out_path.parent.mkdir(parents=True, exist_ok=True)
-
     seed_cfg = _parse_seed_config(SEED_CONFIG)
-    EXCLUDE_BETA01_HUMANOID_WALK = _parse_bool_flag(
-        SEED_CONFIG, key="exclude_beta01_humanoid_walk", default=EXCLUDE_BETA01_HUMANOID_WALK
-    )
+    EXCLUDE_BETA01_HUMANOID_WALK = _parse_bool_flag(SEED_CONFIG, key="exclude_beta01_humanoid_walk", default=EXCLUDE_BETA01_HUMANOID_WALK)
     x_grid = np.linspace(0, X_MAX, 1001, dtype=float)
+    domain_cfg = [("DMC", "DMControl", DM_TASKS), ("MetaWorld", "Meta World", MW_TASKS)]
 
-    fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=PLOT_MODE == "Drift")
-    domain_cfg = [("DMC", "DMControl", DM_TASKS), ("MetaWorld", "MetaWorld", MW_TASKS)]
-
-    for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
-        if PLOT_MODE == "Gap":
-            centers = np.arange(len(METHODS_TO_PLOT), dtype=float)
-            width = 0.16
-            offsets = np.array([-0.24, -0.08, 0.08, 0.24])
-            all_values = []
-            for m_idx, method in enumerate(METHODS_TO_PLOT):
-                stage_vals = _collect_gap_stage_values(tasks, method, seed_cfg, domain_name)
-                for s_idx, values in enumerate(stage_vals):
-                    if values.size == 0:
-                        continue
-                    pos = centers[m_idx] + offsets[s_idx]
-                    color = _shade_color(METHOD_META[method]["color"], s_idx, len(STEP_STAGES))
-                    ax.boxplot(
-                        values,
-                        positions=[pos],
-                        widths=width,
-                        patch_artist=True,
-                        boxprops=dict(facecolor=color, edgecolor="black", linewidth=1.8),
-                        medianprops=dict(color="black", linewidth=1.8),
-                        whiskerprops=dict(color="black", linewidth=1.8),
-                        capprops=dict(color="black", linewidth=1.8),
-                        flierprops=dict(marker="D", markersize=4, markerfacecolor="#666", markeredgecolor="#666", alpha=0.7),
-                    )
-                    all_values.append(values)
-
-            if all_values:
-                merged = np.concatenate(all_values)
-                y_min, y_max = float(np.nanmin(merged)), float(np.nanmax(merged))
-                pad = max(0.03 * (y_max - y_min), 1e-3)
-                y_min, y_max = y_min - pad, y_max + pad
-            else:
-                y_min, y_max = (0.0, 0.05)
-
-            ax.set_xticks(centers)
-            ax.set_xticklabels(["MPPI", "Beta0.0", "Beta0.1"], fontsize=FONT["ticks"])
-            _style_axes(ax, title, "Planner-policy gap", (y_min, y_max), show_y_label=(idx == 0), use_time_axis=False)
-            continue
-
-        all_min = []
-        all_max = []
-        for method in METHODS_TO_PLOT:
-            arr = _collect_samples(tasks, method, PLOT_MODE, seed_cfg, x_grid, domain_name)
-            mean, se = _mean_se(arr)
-            mean = _ema_smooth(mean)
-            se = _ema_smooth(se)
-            ax.plot(x_grid, mean, lw=2.0, color=METHOD_META[method]["color"], alpha=MEAN_ALPHA, label=METHOD_META[method]["label"])
-            ax.fill_between(x_grid, mean - se, mean + se, color=METHOD_META[method]["color"], alpha=0.18)
-            finite = mean[np.isfinite(mean)]
-            if finite.size:
-                all_min.append(float(np.min(finite)))
-                all_max.append(float(np.max(finite)))
-
-        if all_min and all_max:
-            span = max(all_max) - min(all_min)
-            pad = max(0.03 * span, 1e-3)
-            y_min, y_max = min(all_min) - pad, max(all_max) + pad
-        else:
-            y_min, y_max = (-0.05, 0.05) if PLOT_MODE == "Drift" else (0.0, 0.05)
-
-        if PLOT_MODE == "Drift":
-            y_label = "Normalized Temporal Drift"
-        else:
-            y_label = "Planner-policy gap"
-
-        _style_axes(ax, title, y_label, (y_min, y_max), show_y_label=(idx == 0))
-
-    if PLOT_MODE == "Gap":
-        legend_handles = [Patch(facecolor=_shade_color("#1f77b4", i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
-        fig.legend(legend_handles, STAGE_LABELS, ncol=4, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["legend"], frameon=False)
+    if PLOT_MODE == "All":
+        fig, axes = plt.subplots(2, 2, figsize=(18, 12), sharex=False)
+        for col, (domain_name, title, tasks) in enumerate(domain_cfg):
+            _plot_drift_line(axes[0, col], tasks, seed_cfg, x_grid, domain_name, show_y_label=(col == 0), title=title)
+            axes[0, col].set_title(title, fontsize=FONT["big_title"])
+            _plot_gap_box(axes[1, col], tasks, seed_cfg, domain_name, show_y_label=(col == 0), title="")
+        axes[1, 0].set_ylabel("Planner Policy Gap", fontsize=FONT["axis_label"])
+        handles, labels = axes[0, 0].get_legend_handles_labels()
+        fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["big_legend"], frameon=False)
+        fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.22, hspace=0.20)
+    elif PLOT_MODE == "Gap":
+        fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=False)
+        for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
+            _plot_gap_box(ax, tasks, seed_cfg, domain_name, show_y_label=(idx == 0), title=title)
+        fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
     else:
+        fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
+        for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
+            _plot_drift_line(ax, tasks, seed_cfg, x_grid, domain_name, show_y_label=(idx == 0), title=title)
         handles, labels = axes[0].get_legend_handles_labels()
         fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["legend"], frameon=False)
-    fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0])
-    fig.subplots_adjust(wspace=0.18)
+        fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
+
     fig.savefig(out_path)
     plt.close(fig)
     print(f"Saved plot to {out_path}")
