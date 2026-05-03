@@ -5,7 +5,7 @@ pick-cube:
   - seed = [1, 2, 3]
   - source = csv
 pick-ycb:
-  - seed = [1, 2, 3]
+  - seed = [5, 6, 7, 8]
   - source = csv
 stack-cube:
   - seed = [1, 2, 3]

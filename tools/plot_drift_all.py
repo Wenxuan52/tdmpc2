@@ -12,8 +12,8 @@ import pandas as pd
 
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/all_seed.yaml")
-PLOT_MODE = "Drift"  # choose from: "Drift", "Gap"
-EXCLUDE_BETA01_HUMANOID_WALK = False  # can be overridden by `exclude_beta01_humanoid_walk` in seed config
+PLOT_MODE = "Gap"  # choose from: "Drift", "Gap"
+EXCLUDE_BETA01_HUMANOID_WALK = True  # can be overridden by `exclude_beta01_humanoid_walk` in seed config
 
 EPS = 1e-8
 POLICY_DENOM_FLOOR = 1e-3
@@ -178,7 +178,7 @@ def main() -> None:
     x_grid = np.linspace(0, X_MAX, 1001, dtype=float)
 
     fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
-    domain_cfg = [("DMC", "DMC aggregate", DM_TASKS), ("MetaWorld", "MetaWorld aggregate", MW_TASKS)]
+    domain_cfg = [("DMC", "DMControl", DM_TASKS), ("MetaWorld", "MetaWorld", MW_TASKS)]
 
     for ax, (domain_name, title, tasks) in zip(axes, domain_cfg):
         all_max = []

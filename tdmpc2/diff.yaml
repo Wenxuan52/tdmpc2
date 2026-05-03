@@ -5,7 +5,7 @@ num_gpus: 8
 job_mode: seed
 workers_per_gpu: 3
 parallel_seeds_per_task: true
-seeds: [1, 2, 3]
+seeds: [14, 15, 16]
 dmc_steps: 1000000
 metaworld_steps: 1000000
 default_steps: 1000000
@@ -37,4 +37,4 @@ num_eval_states: 1024
 min_buffer_size_for_eval: 5000
 common_overrides:
   - online_save_root=/media/datasets/cheliu21/cxy_worldmodel/online_checkpoint
-  - contrastive_beta=0.0
+  - contrastive_beta=0.1
