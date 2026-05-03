@@ -164,8 +164,6 @@ def _style_axes(ax: plt.Axes, title: str, y_label: str, y_lim: tuple[float, floa
     ax.set_xticklabels(X_TICK_LABELS, fontsize=FONT["ticks"])
     ax.set_ylim(*y_lim)
     ax.tick_params(axis="y", labelsize=FONT["ticks"])
-    if not show_y_label:
-        ax.tick_params(axis="y", labelleft=False)
     ax.set_facecolor("#f2f2f2")
     ax.grid(color="#d9d9d9", linewidth=3.0)
     for s in ax.spines.values():
@@ -221,6 +219,7 @@ def main() -> None:
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["legend"], frameon=False)
     fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0])
+    fig.subplots_adjust(wspace=0.18)
     fig.savefig(out_path)
     plt.close(fig)
     print(f"Saved plot to {out_path}")
