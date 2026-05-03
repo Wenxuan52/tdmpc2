@@ -26,7 +26,7 @@ X_TICK_LABELS = [f"{v:.1f}" for v in np.linspace(0.0, 1.0, 6)]
 DM_TASKS = ["acrobot-swingup", "cheetah-run", "dog-trot", "humanoid-walk"]
 MW_TASKS = ["mw-button-press-wall", "mw-handle-pull-side", "mw-pick-place", "mw-window-open"]
 
-FONT = {"title": 20, "axis_label": 18, "ticks": 15, "legend": 16, "big_title": 24, "big_legend": 18}
+FONT = {"title": 24, "axis_label": 22, "ticks": 19, "legend": 20, "big_title": 30, "big_legend": 22}
 MEAN_ALPHA = 0.75
 EMA_WINDOW = 25
 EMA_ALPHA = 0.3
@@ -177,10 +177,12 @@ def _style_axes(ax: plt.Axes, title: str, y_label: str, y_lim: tuple[float, floa
         ax.tick_params(axis="x", labelsize=FONT["ticks"])
     ax.set_ylim(*y_lim)
     ax.tick_params(axis="y", labelsize=FONT["ticks"])
-    ax.set_facecolor("#f2f2f2")
-    ax.grid(color="#d9d9d9", linewidth=3.0, axis="both")
-    for s in ax.spines.values():
-        s.set_visible(False)
+    ax.set_facecolor("white")
+    ax.grid(color="#d9d9d9", linewidth=1.8, axis="both")
+    for spine in ax.spines.values():
+        spine.set_visible(True)
+        spine.set_color("black")
+        spine.set_linewidth(1.6)
 
 
 def _collect_gap_stage_values(tasks: List[str], method: str, seed_cfg: Dict[str, Dict[str, List[int]]], domain: str) -> List[np.ndarray]:
@@ -207,7 +209,7 @@ def _collect_gap_stage_values(tasks: List[str], method: str, seed_cfg: Dict[str,
 
 
 
-def _plot_gap_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], domain_name: str, show_y_label: bool, title: str = "") -> None:
+def _plot_gap_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], domain_name: str, show_y_label: bool, title: str = "", show_xlabel: bool = True) -> None:
     centers = np.arange(len(METHODS_TO_PLOT), dtype=float)
     width = 0.16
     offsets = np.array([-0.24, -0.08, 0.08, 0.24])
@@ -235,6 +237,8 @@ def _plot_gap_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, 
     ax.set_xticks(centers)
     ax.set_xticklabels(["MPPI", "Beta0.0", "Beta0.1"], fontsize=FONT["ticks"])
     _style_axes(ax, title, "Planner Policy Gap", (y_min, y_max), show_y_label=show_y_label, use_time_axis=False)
+    if not show_xlabel:
+        ax.set_xlabel("")
     ax.grid(axis="x", visible=False)
     gray_handles = [Patch(facecolor=_shade_color("#666666", i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
     ax.legend(handles=gray_handles, fontsize=FONT["legend"], loc="upper right", frameon=True)
@@ -275,11 +279,11 @@ def main() -> None:
         for col, (domain_name, title, tasks) in enumerate(domain_cfg):
             _plot_drift_line(axes[0, col], tasks, seed_cfg, x_grid, domain_name, show_y_label=(col == 0), title=title)
             axes[0, col].set_title(title, fontsize=FONT["big_title"])
-            _plot_gap_box(axes[1, col], tasks, seed_cfg, domain_name, show_y_label=(col == 0), title="")
+            _plot_gap_box(axes[1, col], tasks, seed_cfg, domain_name, show_y_label=(col == 0), title="", show_xlabel=False)
         axes[1, 0].set_ylabel("Planner Policy Gap", fontsize=FONT["axis_label"])
         handles, labels = axes[0, 0].get_legend_handles_labels()
         fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["big_legend"], frameon=False)
-        fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.22, hspace=0.20)
+        fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.12, hspace=0.20)
     elif PLOT_MODE == "Gap":
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=False)
         for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
