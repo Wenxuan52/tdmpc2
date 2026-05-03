@@ -5,6 +5,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Dict, List
+from matplotlib.patches import Patch
+from matplotlib import colors as mcolors
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -17,7 +19,6 @@ EXCLUDE_BETA01_HUMANOID_WALK = True  # can be overridden by `exclude_beta01_huma
 
 EPS = 1e-8
 POLICY_DENOM_FLOOR = 1e-3
-DRIFT_RATIO_CAP = 5.0
 X_MAX = 1_000_000
 X_TICKS = np.linspace(0, X_MAX, 6)
 X_TICK_LABELS = [f"{v:.1f}" for v in np.linspace(0.0, 1.0, 6)]
@@ -27,13 +28,16 @@ MW_TASKS = ["mw-button-press-wall", "mw-handle-pull-side", "mw-pick-place", "mw-
 
 FONT = {"title": 20, "axis_label": 18, "ticks": 15, "legend": 16}
 MEAN_ALPHA = 0.75
-POLICY_REF_COLOR = "#666666"
+EMA_WINDOW = 25
+EMA_ALPHA = 0.3
 METHOD_META = {
     "MPPI": {"drift_col": "action_drift/mppi", "gap_col": "planner_gap/mppi_to_policy", "label": "MPPI", "color": "#1f77b4"},
     "Beta0.0": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.0)", "color": "#ff7f0e"},
     "Beta0.1": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.1)", "color": "#2ca02c"},
 }
 METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
+STEP_STAGES = [(0, 25_000), (25_000, 50_000), (50_000, 75_000), (75_000, 100_000)]
+STAGE_LABELS = ["0-25k", "25-50k", "50-75k", "75-100k"]
 
 
 def _extract_ints(line: str) -> List[int]:
@@ -98,6 +102,12 @@ def _load_task_seed(task: str, seed: int) -> pd.DataFrame:
     return df if "step" in df.columns else pd.DataFrame()
 
 
+def _shade_color(hex_color: str, level: int, total_levels: int = 4) -> str:
+    base = np.array(mcolors.to_rgb(hex_color))
+    mix = 0.75 - 0.5 * (level / max(total_levels - 1, 1))
+    return mcolors.to_hex(base * (1.0 - mix) + np.ones(3) * mix)
+
+
 def _interp(df: pd.DataFrame, col: str, x_grid: np.ndarray) -> np.ndarray:
     if df.empty or col not in df.columns:
         return np.full_like(x_grid, np.nan, dtype=float)
@@ -136,9 +146,7 @@ def _collect_samples(tasks: List[str], method: str, mode: str, seed_cfg: Dict[st
                 finite_policy = policy[np.isfinite(policy) & (policy > 0)]
                 adaptive_floor = float(np.nanpercentile(finite_policy, 10)) if finite_policy.size else POLICY_DENOM_FLOOR
                 denom_floor = max(POLICY_DENOM_FLOOR, adaptive_floor)
-                series = plan / np.maximum(policy + EPS, denom_floor)
-                if domain == "DMC":
-                    series = np.clip(series, 0.0, DRIFT_RATIO_CAP)
+                series = np.log10((plan + EPS) / (np.maximum(policy, denom_floor) + EPS))
             else:
                 series = _interp(df, METHOD_META[method]["gap_col"], x_grid)
             if np.isfinite(series).any():
@@ -148,19 +156,54 @@ def _collect_samples(tasks: List[str], method: str, mode: str, seed_cfg: Dict[st
     return np.vstack(samples)
 
 
-def _style_axes(ax: plt.Axes, title: str, y_label: str, y_lim: tuple[float, float]) -> None:
+def _ema_smooth(series: np.ndarray, window: int = EMA_WINDOW, alpha: float = EMA_ALPHA) -> np.ndarray:
+    if series.size == 0:
+        return series
+    ser = pd.Series(series, dtype=float)
+    interp = ser.interpolate(limit_direction="both")
+    smoothed = interp.ewm(alpha=alpha, adjust=False, min_periods=window).mean()
+    smoothed = smoothed.combine_first(interp.ewm(alpha=alpha, adjust=False).mean())
+    return smoothed.to_numpy(dtype=float)
+
+
+def _style_axes(ax: plt.Axes, title: str, y_label: str, y_lim: tuple[float, float], show_y_label: bool, use_time_axis: bool = True) -> None:
     ax.set_title(title, fontsize=FONT["title"])
     ax.set_xlabel("Time steps (1M)", fontsize=FONT["axis_label"])
-    ax.set_ylabel(y_label, fontsize=FONT["axis_label"])
-    ax.set_xticks(X_TICKS)
-    ax.set_xticklabels(X_TICK_LABELS, fontsize=FONT["ticks"])
+    ax.set_ylabel(y_label if show_y_label else "", fontsize=FONT["axis_label"])
+    if use_time_axis:
+        ax.set_xticks(X_TICKS)
+        ax.set_xticklabels(X_TICK_LABELS, fontsize=FONT["ticks"])
+    else:
+        ax.tick_params(axis="x", labelsize=FONT["ticks"])
     ax.set_ylim(*y_lim)
-    ax.set_yticks([y_lim[0], y_lim[1]])
-    ax.set_yticklabels([f"{y_lim[0]:.1f}", f"{y_lim[1]:.1f}"], fontsize=FONT["ticks"])
+    ax.tick_params(axis="y", labelsize=FONT["ticks"])
     ax.set_facecolor("#f2f2f2")
     ax.grid(color="#d9d9d9", linewidth=3.0)
     for s in ax.spines.values():
         s.set_visible(False)
+
+
+def _collect_gap_stage_values(tasks: List[str], method: str, seed_cfg: Dict[str, Dict[str, List[int]]], domain: str) -> List[np.ndarray]:
+    grouped: List[List[float]] = [[] for _ in STEP_STAGES]
+    for task in tasks:
+        if domain == "DMC" and method == "Beta0.1" and EXCLUDE_BETA01_HUMANOID_WALK and task == "humanoid-walk":
+            continue
+        for seed in seed_cfg.get(method, {}).get(task, []):
+            df = _load_task_seed(task, seed)
+            if df.empty or METHOD_META[method]["gap_col"] not in df.columns:
+                continue
+            step = pd.to_numeric(df["step"], errors="coerce").to_numpy(dtype=float)
+            gap = pd.to_numeric(df[METHOD_META[method]["gap_col"]], errors="coerce").to_numpy(dtype=float)
+            valid = np.isfinite(step) & np.isfinite(gap)
+            if not np.any(valid):
+                continue
+            step = step[valid]
+            gap = gap[valid]
+            for i, (lo, hi) in enumerate(STEP_STAGES):
+                in_stage = (step >= lo) & (step < hi)
+                if np.any(in_stage):
+                    grouped[i].extend(gap[in_stage].tolist())
+    return [np.asarray(v, dtype=float) for v in grouped]
 
 
 def main() -> None:
@@ -177,33 +220,84 @@ def main() -> None:
     )
     x_grid = np.linspace(0, X_MAX, 1001, dtype=float)
 
-    fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
+    fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=PLOT_MODE == "Drift")
     domain_cfg = [("DMC", "DMControl", DM_TASKS), ("MetaWorld", "MetaWorld", MW_TASKS)]
 
-    for ax, (domain_name, title, tasks) in zip(axes, domain_cfg):
+    for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
+        if PLOT_MODE == "Gap":
+            centers = np.arange(len(METHODS_TO_PLOT), dtype=float)
+            width = 0.16
+            offsets = np.array([-0.24, -0.08, 0.08, 0.24])
+            all_values = []
+            for m_idx, method in enumerate(METHODS_TO_PLOT):
+                stage_vals = _collect_gap_stage_values(tasks, method, seed_cfg, domain_name)
+                for s_idx, values in enumerate(stage_vals):
+                    if values.size == 0:
+                        continue
+                    pos = centers[m_idx] + offsets[s_idx]
+                    color = _shade_color(METHOD_META[method]["color"], s_idx, len(STEP_STAGES))
+                    ax.boxplot(
+                        values,
+                        positions=[pos],
+                        widths=width,
+                        patch_artist=True,
+                        boxprops=dict(facecolor=color, edgecolor="black", linewidth=1.8),
+                        medianprops=dict(color="black", linewidth=1.8),
+                        whiskerprops=dict(color="black", linewidth=1.8),
+                        capprops=dict(color="black", linewidth=1.8),
+                        flierprops=dict(marker="D", markersize=4, markerfacecolor="#666", markeredgecolor="#666", alpha=0.7),
+                    )
+                    all_values.append(values)
+
+            if all_values:
+                merged = np.concatenate(all_values)
+                y_min, y_max = float(np.nanmin(merged)), float(np.nanmax(merged))
+                pad = max(0.03 * (y_max - y_min), 1e-3)
+                y_min, y_max = y_min - pad, y_max + pad
+            else:
+                y_min, y_max = (0.0, 0.05)
+
+            ax.set_xticks(centers)
+            ax.set_xticklabels(["MPPI", "Beta0.0", "Beta0.1"], fontsize=FONT["ticks"])
+            _style_axes(ax, title, "Planner-policy gap", (y_min, y_max), show_y_label=(idx == 0), use_time_axis=False)
+            continue
+
+        all_min = []
         all_max = []
         for method in METHODS_TO_PLOT:
             arr = _collect_samples(tasks, method, PLOT_MODE, seed_cfg, x_grid, domain_name)
             mean, se = _mean_se(arr)
+            mean = _ema_smooth(mean)
+            se = _ema_smooth(se)
             ax.plot(x_grid, mean, lw=2.0, color=METHOD_META[method]["color"], alpha=MEAN_ALPHA, label=METHOD_META[method]["label"])
             ax.fill_between(x_grid, mean - se, mean + se, color=METHOD_META[method]["color"], alpha=0.18)
             finite = mean[np.isfinite(mean)]
             if finite.size:
+                all_min.append(float(np.min(finite)))
                 all_max.append(float(np.max(finite)))
 
-        if PLOT_MODE == "Drift":
-            ax.axhline(1.0, color=POLICY_REF_COLOR, ls="--", lw=2.0)
-            y_min, y_max = 0.0, max(1.2, (max(all_max) + 0.1) if all_max else 1.2)
-            y_label = "Normalized temporal drift"
+        if all_min and all_max:
+            span = max(all_max) - min(all_min)
+            pad = max(0.03 * span, 1e-3)
+            y_min, y_max = min(all_min) - pad, max(all_max) + pad
         else:
-            y_min, y_max = 0.0, max(0.05, (max(all_max) + 0.01) if all_max else 0.05)
+            y_min, y_max = (-0.05, 0.05) if PLOT_MODE == "Drift" else (0.0, 0.05)
+
+        if PLOT_MODE == "Drift":
+            y_label = "Normalized Temporal Drift"
+        else:
             y_label = "Planner-policy gap"
 
-        _style_axes(ax, title, y_label, (y_min, y_max))
+        _style_axes(ax, title, y_label, (y_min, y_max), show_y_label=(idx == 0))
 
-    handles, labels = axes[0].get_legend_handles_labels()
-    fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["legend"], frameon=False)
+    if PLOT_MODE == "Gap":
+        legend_handles = [Patch(facecolor=_shade_color("#1f77b4", i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
+        fig.legend(legend_handles, STAGE_LABELS, ncol=4, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["legend"], frameon=False)
+    else:
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["legend"], frameon=False)
     fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0])
+    fig.subplots_adjust(wspace=0.18)
     fig.savefig(out_path)
     plt.close(fig)
     print(f"Saved plot to {out_path}")
