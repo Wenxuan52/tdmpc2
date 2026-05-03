@@ -26,7 +26,8 @@ MW_TASKS = ["mw-button-press-wall", "mw-handle-pull-side", "mw-pick-place", "mw-
 
 FONT = {"title": 20, "axis_label": 18, "ticks": 15, "legend": 16}
 MEAN_ALPHA = 0.75
-POLICY_REF_COLOR = "#666666"
+EMA_WINDOW = 25
+EMA_ALPHA = 0.3
 METHOD_META = {
     "MPPI": {"drift_col": "action_drift/mppi", "gap_col": "planner_gap/mppi_to_policy", "label": "MPPI", "color": "#1f77b4"},
     "Beta0.0": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.0)", "color": "#ff7f0e"},
@@ -145,14 +146,26 @@ def _collect_samples(tasks: List[str], method: str, mode: str, seed_cfg: Dict[st
     return np.vstack(samples)
 
 
-def _style_axes(ax: plt.Axes, title: str, y_label: str, y_lim: tuple[float, float]) -> None:
+def _ema_smooth(series: np.ndarray, window: int = EMA_WINDOW, alpha: float = EMA_ALPHA) -> np.ndarray:
+    if series.size == 0:
+        return series
+    ser = pd.Series(series, dtype=float)
+    interp = ser.interpolate(limit_direction="both")
+    smoothed = interp.ewm(alpha=alpha, adjust=False, min_periods=window).mean()
+    smoothed = smoothed.combine_first(interp.ewm(alpha=alpha, adjust=False).mean())
+    return smoothed.to_numpy(dtype=float)
+
+
+def _style_axes(ax: plt.Axes, title: str, y_label: str, y_lim: tuple[float, float], show_y_label: bool) -> None:
     ax.set_title(title, fontsize=FONT["title"])
     ax.set_xlabel("Time steps (1M)", fontsize=FONT["axis_label"])
-    ax.set_ylabel(y_label, fontsize=FONT["axis_label"])
+    ax.set_ylabel(y_label if show_y_label else "", fontsize=FONT["axis_label"])
     ax.set_xticks(X_TICKS)
     ax.set_xticklabels(X_TICK_LABELS, fontsize=FONT["ticks"])
     ax.set_ylim(*y_lim)
     ax.tick_params(axis="y", labelsize=FONT["ticks"])
+    if not show_y_label:
+        ax.tick_params(axis="y", labelleft=False)
     ax.set_facecolor("#f2f2f2")
     ax.grid(color="#d9d9d9", linewidth=3.0)
     for s in ax.spines.values():
@@ -176,12 +189,14 @@ def main() -> None:
     fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
     domain_cfg = [("DMC", "DMControl", DM_TASKS), ("MetaWorld", "MetaWorld", MW_TASKS)]
 
-    for ax, (domain_name, title, tasks) in zip(axes, domain_cfg):
+    for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
         all_min = []
         all_max = []
         for method in METHODS_TO_PLOT:
             arr = _collect_samples(tasks, method, PLOT_MODE, seed_cfg, x_grid, domain_name)
             mean, se = _mean_se(arr)
+            mean = _ema_smooth(mean)
+            se = _ema_smooth(se)
             ax.plot(x_grid, mean, lw=2.0, color=METHOD_META[method]["color"], alpha=MEAN_ALPHA, label=METHOD_META[method]["label"])
             ax.fill_between(x_grid, mean - se, mean + se, color=METHOD_META[method]["color"], alpha=0.18)
             finite = mean[np.isfinite(mean)]
@@ -197,11 +212,11 @@ def main() -> None:
             y_min, y_max = (-0.05, 0.05) if PLOT_MODE == "Drift" else (0.0, 0.05)
 
         if PLOT_MODE == "Drift":
-            y_label = r"$\log_{10}\left(\frac{d_t^m+\epsilon}{d_t^\pi+\epsilon}\right)$"
+            y_label = "Normalized Temporal Drift"
         else:
             y_label = "Planner-policy gap"
 
-        _style_axes(ax, title, y_label, (y_min, y_max))
+        _style_axes(ax, title, y_label, (y_min, y_max), show_y_label=(idx == 0))
 
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["legend"], frameon=False)
