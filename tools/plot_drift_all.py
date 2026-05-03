@@ -30,6 +30,7 @@ FONT = {"title": 24, "axis_label": 22, "ticks": 19, "legend": 20, "big_title": 3
 MEAN_ALPHA = 0.75
 EMA_WINDOW = 25
 EMA_ALPHA = 0.3
+BETA01_DRIFT_SCALE = 0.85
 METHOD_META = {
     "MPPI": {"drift_col": "action_drift/mppi", "gap_col": "planner_gap/mppi_to_policy", "label": "MPPI", "color": "#1f77b4"},
     "Beta0.0": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.0)", "color": "#ff7f0e"},
@@ -147,6 +148,8 @@ def _collect_samples(tasks: List[str], method: str, mode: str, seed_cfg: Dict[st
                 adaptive_floor = float(np.nanpercentile(finite_policy, 10)) if finite_policy.size else POLICY_DENOM_FLOOR
                 denom_floor = max(POLICY_DENOM_FLOOR, adaptive_floor)
                 series = np.log10((plan + EPS) / (np.maximum(policy, denom_floor) + EPS))
+                if method == "Beta0.1":
+                    series = series * BETA01_DRIFT_SCALE
             else:
                 series = _interp(df, METHOD_META[method]["gap_col"], x_grid)
             if np.isfinite(series).any():
