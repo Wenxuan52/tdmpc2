@@ -15,7 +15,7 @@ import pandas as pd
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/all_seed.yaml")
 PLOT_MODE = "All"  # choose from: "Drift", "Gap", "All"
-DRIFT_BOXPLOT_YLIM = (-0.13, 0.2)
+DRIFT_BOXPLOT_YLIM = (-0.71, 0.71)
 
 EPS = 1e-8
 POLICY_DENOM_FLOOR = 1e-3
