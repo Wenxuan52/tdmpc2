@@ -15,7 +15,7 @@ import pandas as pd
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/all_seed.yaml")
 PLOT_MODE = "All"  # choose from: "Drift", "Gap", "All"
-EXCLUDE_BETA01_HUMANOID_WALK = True  # can be overridden by `exclude_beta01_humanoid_walk` in seed config
+CORRECTION_RESIDUAL_YLIM = (-0.1, 0.5)
 
 EPS = 1e-8
 POLICY_DENOM_FLOOR = 1e-3
@@ -30,7 +30,6 @@ FONT = {"title": 24, "axis_label": 22, "ticks": 19, "legend": 20, "big_title": 3
 MEAN_ALPHA = 0.75
 EMA_WINDOW = 25
 EMA_ALPHA = 0.2
-BETA01_DRIFT_SCALE = 0.70
 METHOD_META = {
     "MPPI": {"drift_col": "action_drift/mppi", "gap_col": "planner_gap/mppi_to_policy", "label": "MPPI", "color": "#1f77b4"},
     "Beta0.0": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.0)", "color": "#ff7f0e"},
@@ -136,8 +135,6 @@ def _mean_se(arr: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 def _collect_samples(tasks: List[str], method: str, mode: str, seed_cfg: Dict[str, Dict[str, List[int]]], x_grid: np.ndarray, domain: str) -> np.ndarray:
     samples: List[np.ndarray] = []
     for task in tasks:
-        if domain == "DMC" and method == "Beta0.1" and EXCLUDE_BETA01_HUMANOID_WALK and task == "humanoid-walk":
-            continue
         for seed in seed_cfg.get(method, {}).get(task, []):
             df = _load_task_seed(task, seed)
             if df.empty:
@@ -149,8 +146,6 @@ def _collect_samples(tasks: List[str], method: str, mode: str, seed_cfg: Dict[st
                 adaptive_floor = float(np.nanpercentile(finite_policy, 10)) if finite_policy.size else POLICY_DENOM_FLOOR
                 denom_floor = max(POLICY_DENOM_FLOOR, adaptive_floor)
                 series = np.log10((plan + EPS) / (np.maximum(policy, denom_floor) + EPS))
-                if domain == "DMC" and method == "Beta0.1":
-                    series = series * BETA01_DRIFT_SCALE
             else:
                 series = _interp(df, METHOD_META[method]["gap_col"], x_grid)
             if np.isfinite(series).any():
@@ -192,8 +187,6 @@ def _style_axes(ax: plt.Axes, title: str, y_label: str, y_lim: tuple[float, floa
 def _collect_gap_stage_values(tasks: List[str], method: str, seed_cfg: Dict[str, Dict[str, List[int]]], domain: str) -> List[np.ndarray]:
     grouped: List[List[float]] = [[] for _ in STEP_STAGES]
     for task in tasks:
-        if domain == "DMC" and method == "Beta0.1" and EXCLUDE_BETA01_HUMANOID_WALK and task == "humanoid-walk":
-            continue
         for seed in seed_cfg.get(method, {}).get(task, []):
             df = _load_task_seed(task, seed)
             if df.empty or METHOD_META[method]["gap_col"] not in df.columns:
@@ -227,7 +220,7 @@ def _collect_gap_stage_values(tasks: List[str], method: str, seed_cfg: Dict[str,
 
 
 
-def _plot_gap_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], domain_name: str, show_y_label: bool, title: str = "", show_xlabel: bool = True) -> None:
+def _plot_gap_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], domain_name: str, show_y_label: bool, title: str = "", show_xlabel: bool = True, y_lim: tuple[float, float] | None = None) -> None:
     centers = np.arange(len(METHODS_TO_PLOT), dtype=float)
     width = 0.16
     offsets = np.array([-0.24, -0.08, 0.08, 0.24])
@@ -245,7 +238,9 @@ def _plot_gap_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, 
                 capprops=dict(color="black", linewidth=1.8),
                 flierprops=dict(marker="D", markersize=4, markerfacecolor="#666", markeredgecolor="#666", alpha=0.7))
             all_values.append(values)
-    if all_values:
+    if y_lim is not None:
+        y_min, y_max = y_lim
+    elif all_values:
         merged = np.concatenate(all_values)
         y_min, y_max = float(np.nanmin(merged)), float(np.nanmax(merged))
         pad = max(0.03 * (y_max - y_min), 1e-3)
@@ -281,31 +276,30 @@ def _plot_drift_line(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[st
     _style_axes(ax, title, "Normalized Drift", (y_min, y_max), show_y_label=show_y_label, use_time_axis=True)
 
 def main() -> None:
-    global EXCLUDE_BETA01_HUMANOID_WALK
     if PLOT_MODE not in {"Drift", "Gap", "All"}:
         raise ValueError("PLOT_MODE must be 'Drift', 'Gap' or 'All'")
 
     out_path = Path(f"figures/drift_all_{PLOT_MODE}.pdf")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     seed_cfg = _parse_seed_config(SEED_CONFIG)
-    EXCLUDE_BETA01_HUMANOID_WALK = _parse_bool_flag(SEED_CONFIG, key="exclude_beta01_humanoid_walk", default=EXCLUDE_BETA01_HUMANOID_WALK)
     x_grid = np.linspace(0, X_MAX, 1001, dtype=float)
     domain_cfg = [("DMC", "DMControl", DM_TASKS), ("MetaWorld", "Meta World", MW_TASKS)]
 
     if PLOT_MODE == "All":
-        fig, axes = plt.subplots(2, 2, figsize=(18, 12), sharex=False)
-        for col, (domain_name, title, tasks) in enumerate(domain_cfg):
-            _plot_drift_line(axes[0, col], tasks, seed_cfg, x_grid, domain_name, show_y_label=(col == 0), title=title)
-            axes[0, col].set_title(title, fontsize=FONT["big_title"])
-            _plot_gap_box(axes[1, col], tasks, seed_cfg, domain_name, show_y_label=(col == 0), title="", show_xlabel=False)
-        axes[1, 0].set_ylabel("Correction Residual Drift", fontsize=FONT["axis_label"])
-        handles, labels = axes[0, 0].get_legend_handles_labels()
-        fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["big_legend"], frameon=False)
-        fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.12, hspace=0.20)
+        fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=False)
+        domain_name, _, tasks = domain_cfg[1]  # Meta World only
+        _plot_drift_line(axes[0], tasks, seed_cfg, x_grid, domain_name, show_y_label=True, title="Normalized Drift")
+        _plot_gap_box(
+            axes[1], tasks, seed_cfg, domain_name, show_y_label=True, title="Correction Residual Drift",
+            show_xlabel=True, y_lim=CORRECTION_RESIDUAL_YLIM,
+        )
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["legend"], frameon=False)
+        fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
     elif PLOT_MODE == "Gap":
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=False)
         for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
-            _plot_gap_box(ax, tasks, seed_cfg, domain_name, show_y_label=(idx == 0), title=title)
+            _plot_gap_box(ax, tasks, seed_cfg, domain_name, show_y_label=(idx == 0), title=title, y_lim=CORRECTION_RESIDUAL_YLIM)
         fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
     else:
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
