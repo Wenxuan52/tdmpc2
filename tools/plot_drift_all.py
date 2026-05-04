@@ -15,7 +15,7 @@ import pandas as pd
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/all_seed.yaml")
 PLOT_MODE = "All"  # choose from: "Drift", "Gap", "All"
-DRIFT_BOXPLOT_YLIM = (-0.13, 0.2)
+DRIFT_BOXPLOT_YLIM = (-0.71, 0.71)
 
 EPS = 1e-8
 POLICY_DENOM_FLOOR = 1e-3
@@ -220,7 +220,7 @@ def _collect_drift_stage_values(tasks: List[str], method: str, seed_cfg: Dict[st
     return [np.asarray(v, dtype=float) for v in grouped]
 
 
-def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], domain_name: str, show_y_label: bool, title: str = "", show_xlabel: bool = True, y_lim: tuple[float, float] | None = None) -> None:
+def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], domain_name: str, show_y_label: bool, title: str = "", show_xlabel: bool = True, y_lim: tuple[float, float] | None = None, legend_inside: bool = False) -> None:
     centers = np.arange(len(METHODS_TO_PLOT), dtype=float)
     width = 0.16
     offsets = np.array([-0.24, -0.08, 0.08, 0.24])
@@ -254,7 +254,10 @@ def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str
         ax.set_xlabel("")
     ax.grid(axis="x", visible=False)
     gray_handles = [Patch(facecolor=_shade_color("#666666", i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
-    ax.legend(handles=gray_handles, fontsize=FONT["legend"], loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=4, frameon=True)
+    if legend_inside:
+        ax.legend(handles=gray_handles, fontsize=FONT["legend"] - 2, loc="upper right", frameon=True)
+    else:
+        ax.legend(handles=gray_handles, fontsize=FONT["legend"], loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=4, frameon=True)
 
 
 def _plot_drift_line(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], x_grid: np.ndarray, domain_name: str, show_y_label: bool, title: str = "") -> None:
@@ -296,9 +299,16 @@ def main() -> None:
         fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0])
     elif PLOT_MODE == "Gap":
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=False)
-        for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
-            _plot_drift_box(ax, tasks, seed_cfg, domain_name, show_y_label=(idx == 0), title=title, show_xlabel=False, y_lim=DRIFT_BOXPLOT_YLIM)
-        fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
+        domain_name, _, tasks = domain_cfg[1]  # Meta World only
+        _plot_drift_line(axes[0], tasks, seed_cfg, x_grid, domain_name, show_y_label=False, title="")
+        axes[0].set_xlabel("Env Steps (1M)", fontsize=FONT["axis_label"])
+        _plot_drift_box(
+            axes[1], tasks, seed_cfg, domain_name, show_y_label=False, title="", show_xlabel=False,
+            y_lim=DRIFT_BOXPLOT_YLIM, legend_inside=True,
+        )
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["legend"], frameon=False)
+        fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
     else:
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
         for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
