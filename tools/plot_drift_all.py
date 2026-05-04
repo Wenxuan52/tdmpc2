@@ -36,8 +36,8 @@ METHOD_META = {
     "Beta0.1": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.1)", "color": "#2ca02c"},
 }
 METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
-STEP_STAGES = [(0, 25_000), (25_000, 50_000), (50_000, 75_000), (75_000, 100_000)]
-STAGE_LABELS = ["0-25k", "25-50k", "50-75k", "75-100k"]
+STEP_STAGES = [(0, 250_000), (250_000, 500_000), (500_000, 750_000), (750_000, 1_000_000)]
+STAGE_LABELS = ["0-250k", "250-500k", "500-750k", "750-1000k"]
 CORRECTION_DELTA_STEPS = 5_000
 
 
@@ -254,7 +254,7 @@ def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str
         ax.set_xlabel("")
     ax.grid(axis="x", visible=False)
     gray_handles = [Patch(facecolor=_shade_color("#666666", i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
-    ax.legend(handles=gray_handles, fontsize=FONT["legend"], loc="upper center", frameon=True)
+    ax.legend(handles=gray_handles, fontsize=FONT["legend"], loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=4, frameon=True)
 
 
 def _plot_drift_line(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], x_grid: np.ndarray, domain_name: str, show_y_label: bool, title: str = "") -> None:
@@ -289,15 +289,15 @@ def main() -> None:
         fig, ax = plt.subplots(1, 1, figsize=(9.2, 7.5), sharex=False)
         domain_name, _, tasks = domain_cfg[1]  # Meta World only
         _plot_drift_box(
-            ax, tasks, seed_cfg, domain_name, show_y_label=True, title="Meta World",
-            show_xlabel=True, y_lim=DRIFT_BOXPLOT_YLIM,
+            ax, tasks, seed_cfg, domain_name, show_y_label=False, title="Normalized Drift",
+            show_xlabel=False, y_lim=DRIFT_BOXPLOT_YLIM,
         )
-        fig.tight_layout(rect=[0.02, 0.02, 0.98, 1.0])
+        fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0])
     elif PLOT_MODE == "Gap":
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=False)
         for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
-            _plot_drift_box(ax, tasks, seed_cfg, domain_name, show_y_label=(idx == 0), title=title, y_lim=DRIFT_BOXPLOT_YLIM)
-        fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
+            _plot_drift_box(ax, tasks, seed_cfg, domain_name, show_y_label=(idx == 0), title=title, show_xlabel=False, y_lim=DRIFT_BOXPLOT_YLIM)
+        fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
     else:
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
         for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
