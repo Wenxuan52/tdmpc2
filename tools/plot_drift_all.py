@@ -15,7 +15,7 @@ import pandas as pd
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/all_seed.yaml")
 PLOT_MODE = "All"  # choose from: "Drift", "Gap", "All"
-DRIFT_BOXPLOT_YLIM = (-2.5, 2.5)
+DRIFT_BOXPLOT_YLIM = (-0.13, 0.2)
 
 EPS = 1e-8
 POLICY_DENOM_FLOOR = 1e-3
@@ -286,7 +286,7 @@ def main() -> None:
     domain_cfg = [("DMC", "DMControl", DM_TASKS), ("MetaWorld", "Meta World", MW_TASKS)]
 
     if PLOT_MODE == "All":
-        fig, ax = plt.subplots(1, 1, figsize=(9.2, 7.5), sharex=False)
+        fig, ax = plt.subplots(1, 1, figsize=(12.0, 7.5), sharex=False)
         domain_name, _, tasks = domain_cfg[1]  # Meta World only
         _plot_drift_box(
             ax, tasks, seed_cfg, domain_name, show_y_label=False, title="Normalized Drift",
