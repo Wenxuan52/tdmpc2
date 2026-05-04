@@ -292,6 +292,7 @@ def main() -> None:
             ax, tasks, seed_cfg, domain_name, show_y_label=False, title="Normalized Drift",
             show_xlabel=False, y_lim=DRIFT_BOXPLOT_YLIM,
         )
+        ax.axhline(0.0, color="#4d4d4d", linestyle="--", linewidth=2.0, alpha=0.95, zorder=1)
         fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0])
     elif PLOT_MODE == "Gap":
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=False)
