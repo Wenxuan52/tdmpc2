@@ -15,7 +15,7 @@ import pandas as pd
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/all_seed.yaml")
 PLOT_MODE = "All"  # choose from: "Drift", "Gap", "All"
-CORRECTION_RESIDUAL_YLIM = (-0.1, 0.5)
+DRIFT_BOXPLOT_YLIM = (-0.13, 0.2)
 
 EPS = 1e-8
 POLICY_DENOM_FLOOR = 1e-3
@@ -36,8 +36,8 @@ METHOD_META = {
     "Beta0.1": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.1)", "color": "#2ca02c"},
 }
 METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
-STEP_STAGES = [(0, 25_000), (25_000, 50_000), (50_000, 75_000), (75_000, 100_000)]
-STAGE_LABELS = ["0-25k", "25-50k", "50-75k", "75-100k"]
+STEP_STAGES = [(0, 250_000), (250_000, 500_000), (500_000, 750_000), (750_000, 1_000_000)]
+STAGE_LABELS = ["0-250k", "250-500k", "500-750k", "750-1000k"]
 CORRECTION_DELTA_STEPS = 5_000
 
 
@@ -184,49 +184,49 @@ def _style_axes(ax: plt.Axes, title: str, y_label: str, y_lim: tuple[float, floa
         spine.set_linewidth(1.6)
 
 
-def _collect_gap_stage_values(tasks: List[str], method: str, seed_cfg: Dict[str, Dict[str, List[int]]], domain: str) -> List[np.ndarray]:
+def _collect_drift_stage_values(tasks: List[str], method: str, seed_cfg: Dict[str, Dict[str, List[int]]], domain: str) -> List[np.ndarray]:
     grouped: List[List[float]] = [[] for _ in STEP_STAGES]
     for task in tasks:
         for seed in seed_cfg.get(method, {}).get(task, []):
             df = _load_task_seed(task, seed)
-            if df.empty or METHOD_META[method]["gap_col"] not in df.columns:
+            if df.empty or METHOD_META[method]["drift_col"] not in df.columns or "action_drift/pi" not in df.columns:
                 continue
             step = pd.to_numeric(df["step"], errors="coerce").to_numpy(dtype=float)
-            correction = pd.to_numeric(df[METHOD_META[method]["gap_col"]], errors="coerce").to_numpy(dtype=float)
-            valid = np.isfinite(step) & np.isfinite(correction)
+            plan = pd.to_numeric(df[METHOD_META[method]["drift_col"]], errors="coerce").to_numpy(dtype=float)
+            policy = pd.to_numeric(df["action_drift/pi"], errors="coerce").to_numpy(dtype=float)
+            valid = np.isfinite(step) & np.isfinite(plan) & np.isfinite(policy)
             if not np.any(valid):
                 continue
             step = step[valid]
-            correction = correction[valid]
+            plan = plan[valid]
+            policy = policy[valid]
             order = np.argsort(step)
             step = step[order]
-            correction = correction[order]
-            if step.size < 2:
+            plan = plan[order]
+            policy = policy[order]
+            finite_policy = policy[np.isfinite(policy) & (policy > 0)]
+            adaptive_floor = float(np.nanpercentile(finite_policy, 10)) if finite_policy.size else POLICY_DENOM_FLOOR
+            denom_floor = max(POLICY_DENOM_FLOOR, adaptive_floor)
+            drift = np.log10((plan + EPS) / (np.maximum(policy, denom_floor) + EPS))
+            finite_drift = np.isfinite(drift)
+            if not np.any(finite_drift):
                 continue
-            correction_series = pd.Series(correction, index=step).sort_index()
-            prev_steps = step - CORRECTION_DELTA_STEPS
-            correction_prev = correction_series.reindex(prev_steps).interpolate(method="index", limit_area="inside").to_numpy(dtype=float)
-            residual = np.square(correction - correction_prev)
-            finite_residual = np.isfinite(residual)
-            if not np.any(finite_residual):
-                continue
-            step = step[finite_residual]
-            residual = residual[finite_residual]
+            step = step[finite_drift]
+            drift = drift[finite_drift]
             for i, (lo, hi) in enumerate(STEP_STAGES):
                 in_stage = (step >= lo) & (step < hi)
                 if np.any(in_stage):
-                    grouped[i].extend(residual[in_stage].tolist())
+                    grouped[i].extend(drift[in_stage].tolist())
     return [np.asarray(v, dtype=float) for v in grouped]
 
 
-
-def _plot_gap_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], domain_name: str, show_y_label: bool, title: str = "", show_xlabel: bool = True, y_lim: tuple[float, float] | None = None) -> None:
+def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], domain_name: str, show_y_label: bool, title: str = "", show_xlabel: bool = True, y_lim: tuple[float, float] | None = None, legend_inside: bool = False) -> None:
     centers = np.arange(len(METHODS_TO_PLOT), dtype=float)
     width = 0.16
     offsets = np.array([-0.24, -0.08, 0.08, 0.24])
     all_values = []
     for m_idx, method in enumerate(METHODS_TO_PLOT):
-        stage_vals = _collect_gap_stage_values(tasks, method, seed_cfg, domain_name)
+        stage_vals = _collect_drift_stage_values(tasks, method, seed_cfg, domain_name)
         for s_idx, values in enumerate(stage_vals):
             if values.size == 0:
                 continue
@@ -249,12 +249,15 @@ def _plot_gap_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, 
         y_min, y_max = (0.0, 0.05)
     ax.set_xticks(centers)
     ax.set_xticklabels(["MPPI", "Beta0.0", "Beta0.1"], fontsize=FONT["ticks"])
-    _style_axes(ax, title, "Correction Residual Drift", (y_min, y_max), show_y_label=show_y_label, use_time_axis=False)
+    _style_axes(ax, title, "Normalized Drift", (y_min, y_max), show_y_label=show_y_label, use_time_axis=False)
     if not show_xlabel:
         ax.set_xlabel("")
     ax.grid(axis="x", visible=False)
     gray_handles = [Patch(facecolor=_shade_color("#666666", i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
-    ax.legend(handles=gray_handles, fontsize=FONT["legend"], loc="upper center", frameon=True)
+    if legend_inside:
+        ax.legend(handles=gray_handles, fontsize=FONT["legend"] - 2, loc="upper right", frameon=True)
+    else:
+        ax.legend(handles=gray_handles, fontsize=FONT["legend"], loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=4, frameon=True)
 
 
 def _plot_drift_line(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], x_grid: np.ndarray, domain_name: str, show_y_label: bool, title: str = "") -> None:
@@ -286,20 +289,27 @@ def main() -> None:
     domain_cfg = [("DMC", "DMControl", DM_TASKS), ("MetaWorld", "Meta World", MW_TASKS)]
 
     if PLOT_MODE == "All":
+        fig, ax = plt.subplots(1, 1, figsize=(12.0, 7.5), sharex=False)
+        domain_name, _, tasks = domain_cfg[1]  # Meta World only
+        _plot_drift_box(
+            ax, tasks, seed_cfg, domain_name, show_y_label=False, title="Normalized Drift",
+            show_xlabel=False, y_lim=DRIFT_BOXPLOT_YLIM,
+        )
+        ax.axhline(0.0, color="#4d4d4d", linestyle="--", linewidth=2.0, alpha=0.95, zorder=1)
+        fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0])
+    elif PLOT_MODE == "Gap":
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=False)
         domain_name, _, tasks = domain_cfg[1]  # Meta World only
-        _plot_drift_line(axes[0], tasks, seed_cfg, x_grid, domain_name, show_y_label=True, title="Normalized Drift")
-        _plot_gap_box(
-            axes[1], tasks, seed_cfg, domain_name, show_y_label=True, title="Correction Residual Drift",
-            show_xlabel=True, y_lim=CORRECTION_RESIDUAL_YLIM,
+        _plot_drift_line(axes[0], tasks, seed_cfg, x_grid, domain_name, show_y_label=False, title="")
+        axes[0].set_xlabel("")
+        axes[0].set_xticks(X_TICKS)
+        axes[0].set_xticklabels(["0k", "200k", "400k", "600k", "800k", "1M"], fontsize=FONT["ticks"])
+        _plot_drift_box(
+            axes[1], tasks, seed_cfg, domain_name, show_y_label=False, title="", show_xlabel=False,
+            y_lim=DRIFT_BOXPLOT_YLIM, legend_inside=True,
         )
         handles, labels = axes[0].get_legend_handles_labels()
         fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["legend"], frameon=False)
-        fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
-    elif PLOT_MODE == "Gap":
-        fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=False)
-        for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
-            _plot_gap_box(ax, tasks, seed_cfg, domain_name, show_y_label=(idx == 0), title=title, y_lim=CORRECTION_RESIDUAL_YLIM)
         fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
     else:
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
