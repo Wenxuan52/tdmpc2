@@ -39,6 +39,7 @@ METHOD_META = {
 METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
 STEP_STAGES = [(0, 25_000), (25_000, 50_000), (50_000, 75_000), (75_000, 100_000)]
 STAGE_LABELS = ["0-25k", "25-50k", "50-75k", "75-100k"]
+CORRECTION_DELTA_STEPS = 5_000
 
 
 def _extract_ints(line: str) -> List[int]:
@@ -198,16 +199,30 @@ def _collect_gap_stage_values(tasks: List[str], method: str, seed_cfg: Dict[str,
             if df.empty or METHOD_META[method]["gap_col"] not in df.columns:
                 continue
             step = pd.to_numeric(df["step"], errors="coerce").to_numpy(dtype=float)
-            gap = pd.to_numeric(df[METHOD_META[method]["gap_col"]], errors="coerce").to_numpy(dtype=float)
-            valid = np.isfinite(step) & np.isfinite(gap)
+            correction = pd.to_numeric(df[METHOD_META[method]["gap_col"]], errors="coerce").to_numpy(dtype=float)
+            valid = np.isfinite(step) & np.isfinite(correction)
             if not np.any(valid):
                 continue
             step = step[valid]
-            gap = gap[valid]
+            correction = correction[valid]
+            order = np.argsort(step)
+            step = step[order]
+            correction = correction[order]
+            if step.size < 2:
+                continue
+            correction_series = pd.Series(correction, index=step).sort_index()
+            prev_steps = step - CORRECTION_DELTA_STEPS
+            correction_prev = correction_series.reindex(prev_steps).interpolate(method="index", limit_area="inside").to_numpy(dtype=float)
+            residual = np.square(correction - correction_prev)
+            finite_residual = np.isfinite(residual)
+            if not np.any(finite_residual):
+                continue
+            step = step[finite_residual]
+            residual = residual[finite_residual]
             for i, (lo, hi) in enumerate(STEP_STAGES):
                 in_stage = (step >= lo) & (step < hi)
                 if np.any(in_stage):
-                    grouped[i].extend(gap[in_stage].tolist())
+                    grouped[i].extend(residual[in_stage].tolist())
     return [np.asarray(v, dtype=float) for v in grouped]
 
 
@@ -239,7 +254,7 @@ def _plot_gap_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, 
         y_min, y_max = (0.0, 0.05)
     ax.set_xticks(centers)
     ax.set_xticklabels(["MPPI", "Beta0.0", "Beta0.1"], fontsize=FONT["ticks"])
-    _style_axes(ax, title, "Planner Policy Gap", (y_min, y_max), show_y_label=show_y_label, use_time_axis=False)
+    _style_axes(ax, title, "Correction Residual Drift", (y_min, y_max), show_y_label=show_y_label, use_time_axis=False)
     if not show_xlabel:
         ax.set_xlabel("")
     ax.grid(axis="x", visible=False)
@@ -283,7 +298,7 @@ def main() -> None:
             _plot_drift_line(axes[0, col], tasks, seed_cfg, x_grid, domain_name, show_y_label=(col == 0), title=title)
             axes[0, col].set_title(title, fontsize=FONT["big_title"])
             _plot_gap_box(axes[1, col], tasks, seed_cfg, domain_name, show_y_label=(col == 0), title="", show_xlabel=False)
-        axes[1, 0].set_ylabel("Planner Policy Gap", fontsize=FONT["axis_label"])
+        axes[1, 0].set_ylabel("Correction Residual Drift", fontsize=FONT["axis_label"])
         handles, labels = axes[0, 0].get_legend_handles_labels()
         fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["big_legend"], frameon=False)
         fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.12, hspace=0.20)
