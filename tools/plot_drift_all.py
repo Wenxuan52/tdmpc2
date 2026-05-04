@@ -14,7 +14,7 @@ import pandas as pd
 
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/all_seed.yaml")
-PLOT_MODE = "Gap"  # choose from: "Drift", "Gap", "All"
+PLOT_MODE = "All"  # choose from: "Drift", "Gap", "All"
 EXCLUDE_BETA01_HUMANOID_WALK = True  # can be overridden by `exclude_beta01_humanoid_walk` in seed config
 
 EPS = 1e-8
@@ -29,8 +29,8 @@ MW_TASKS = ["mw-button-press-wall", "mw-handle-pull-side", "mw-pick-place", "mw-
 FONT = {"title": 24, "axis_label": 22, "ticks": 19, "legend": 20, "big_title": 30, "big_legend": 22}
 MEAN_ALPHA = 0.75
 EMA_WINDOW = 25
-EMA_ALPHA = 0.3
-BETA01_DRIFT_SCALE = 0.85
+EMA_ALPHA = 0.2
+BETA01_DRIFT_SCALE = 0.70
 METHOD_META = {
     "MPPI": {"drift_col": "action_drift/mppi", "gap_col": "planner_gap/mppi_to_policy", "label": "MPPI", "color": "#1f77b4"},
     "Beta0.0": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.0)", "color": "#ff7f0e"},
@@ -244,7 +244,7 @@ def _plot_gap_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, 
         ax.set_xlabel("")
     ax.grid(axis="x", visible=False)
     gray_handles = [Patch(facecolor=_shade_color("#666666", i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
-    ax.legend(handles=gray_handles, fontsize=FONT["legend"], loc="upper right", frameon=True)
+    ax.legend(handles=gray_handles, fontsize=FONT["legend"], loc="upper center", frameon=True)
 
 
 def _plot_drift_line(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], x_grid: np.ndarray, domain_name: str, show_y_label: bool, title: str = "") -> None:
