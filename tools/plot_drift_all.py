@@ -301,7 +301,9 @@ def main() -> None:
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=False)
         domain_name, _, tasks = domain_cfg[1]  # Meta World only
         _plot_drift_line(axes[0], tasks, seed_cfg, x_grid, domain_name, show_y_label=False, title="")
-        axes[0].set_xlabel("Env Steps (1M)", fontsize=FONT["axis_label"])
+        axes[0].set_xlabel("")
+        axes[0].set_xticks(X_TICKS)
+        axes[0].set_xticklabels(["0k", "200k", "400k", "600k", "800k", "1M"], fontsize=FONT["ticks"])
         _plot_drift_box(
             axes[1], tasks, seed_cfg, domain_name, show_y_label=False, title="", show_xlabel=False,
             y_lim=DRIFT_BOXPLOT_YLIM, legend_inside=True,
