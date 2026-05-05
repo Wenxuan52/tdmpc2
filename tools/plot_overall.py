@@ -72,7 +72,7 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def read_csv(path: Path) -> pd.DataFrame:
+def read_csv(path: Path, force_zero_start: bool = False) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame(columns=["step", "reward", "seed"])
     df = pd.read_csv(path)
@@ -93,7 +93,15 @@ def read_csv(path: Path) -> pd.DataFrame:
     out = out.dropna(subset=["step", "reward", "seed"])
     out["step"] = (np.round(out["step"] / GRID_STEP) * GRID_STEP).astype(int)
     out["seed"] = out["seed"].astype(int)
-    return out.sort_values(["seed", "step"]).drop_duplicates(["seed", "step"], keep="last")
+    out = out.sort_values(["seed", "step"]).drop_duplicates(["seed", "step"], keep="last")
+    if force_zero_start and not out.empty:
+        out.loc[out["step"] == 0, "reward"] = 0.0
+        missing_seed0 = set(out["seed"].unique()) - set(out.loc[out["step"] == 0, "seed"].unique())
+        if missing_seed0:
+            pad = pd.DataFrame([{"step": 0, "reward": 0.0, "seed": s} for s in sorted(missing_seed0)])
+            out = pd.concat([out, pad], ignore_index=True)
+            out = out.sort_values(["seed", "step"]).drop_duplicates(["seed", "step"], keep="last")
+    return out
 
 
 def seed_curve(df: pd.DataFrame, seed: int, step_grid: np.ndarray) -> np.ndarray:
@@ -127,7 +135,7 @@ def domain_method_stats(method: str, domain: str, spec: dict, baseline_root: Pat
                 path = resolve_task_csv(ours_root, task)
             else:
                 path = resolve_task_csv(baseline_root / METHOD_DIR[method], task)
-            df = read_csv(path)
+            df = read_csv(path, force_zero_start=(method != "ours" and domain == "MyoSuite"))
             c = seed_curve(df, seed, step_grid)
             if not np.all(np.isnan(c)):
                 task_curves.append(c)
@@ -160,7 +168,8 @@ def main() -> None:
     for ax, (domain, spec) in zip(axes, DOMAIN_SPECS.items()):
         for method in METHODS:
             x, m, lo, hi = domain_method_stats(method, domain, spec, args.baseline_root, args.ours_root)
-            ax.plot(x, m, color=COLORS[method], lw=2.8, label=DEFAULT_LABELS[method])
+            line_alpha = 1.0 if method == "ours" else 0.65
+            ax.plot(x, m, color=COLORS[method], lw=2.8, label=DEFAULT_LABELS[method], alpha=line_alpha)
             ax.fill_between(x, lo, hi, color=COLORS[method], alpha=0.12, linewidth=0)
         ax.set_title(f"{domain}\n{len(spec['tasks'])} tasks", fontweight="bold")
         ax.set_xlim(0, spec["x_max"])
