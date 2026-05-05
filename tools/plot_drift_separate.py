@@ -192,7 +192,7 @@ def main() -> None:
                         m_mean = _ema(m_mean)
                         ax.plot(x_grid, p_mean, ls="-", lw=2.0, alpha=P_MEAN_ALPHA, color=POLICY_COLOR, label="Policy network")
                         ax.fill_between(x_grid, p_mean - p_se, p_mean + p_se, color=POLICY_COLOR, alpha=0.14, linewidth=0)
-                        ax.plot(x_grid, m_mean, lw=2.0, alpha=MEAN_ALPHA, color=meta["color"], label=meta["label"])
+                        ax.plot(x_grid, m_mean, lw=2.5, alpha=MEAN_ALPHA, color=meta["color"], label=meta["label"])
                         ax.fill_between(x_grid, m_mean - m_se, m_mean + m_se, color=meta["color"], alpha=0.14, linewidth=0)
 
                     ymin, ymax = (0.0, unified_ymax.get(task, 0.05))
@@ -202,7 +202,7 @@ def main() -> None:
                     ax.set_yticks([ymin, ymax])
                     ax.set_yticklabels([f"{ymin:.1f}", f"{ymax:.1f}"], fontsize=FONT["ticks"])
                     ax.set_title(_prettify_task(task), fontsize=FONT["title"])
-                    ax.set_facecolor("#f2f2f2")
+                    ax.set_facecolor("white")
                     ax.grid(color="#d9d9d9", linewidth=0.8, alpha=0.55)
                     ax.spines["top"].set_visible(False)
                     ax.spines["right"].set_visible(False)
