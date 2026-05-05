@@ -201,7 +201,8 @@ def main() -> None:
                     ax.set_ylim(ymin, ymax)
                     ax.set_yticks([ymin, ymax])
                     ax.set_yticklabels([f"{ymin:.1f}", f"{ymax:.1f}"], fontsize=FONT["ticks"])
-                    ax.set_title(_prettify_task(task), fontsize=FONT["title"])
+                    title_task = task[3:] if c == 1 and task.startswith("mw-") else task
+                    ax.set_title(_prettify_task(title_task), fontsize=FONT["title"])
                     ax.set_facecolor("white")
                     ax.grid(color="#d9d9d9", linewidth=0.8, alpha=0.55)
                     ax.spines["top"].set_visible(False)
