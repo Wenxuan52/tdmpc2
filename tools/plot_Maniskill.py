@@ -50,6 +50,7 @@ X_MAX = 4_000_000
 Y_MIN, Y_MAX = -3.0, 103.0
 GRID_STEP = 100_000
 EXPECTED_SEEDS = [1, 2, 3]
+FINAL_CSV_DIR = Path("/media/datasets/cheliu21/cxy_worldmodel/final_csv")
 DEFAULT_OURS_SOURCE = "log"
 TASK_MAX_STEP = {
     "lift-cube": 3_900_000,
@@ -290,6 +291,35 @@ def summarize_mean_ci(df: pd.DataFrame, step_grid: np.ndarray, seeds: List[int])
     return {"mean": mean, "ci95": ci95}
 
 
+
+def export_task_final_csv(task: str, df: pd.DataFrame, seed_list: List[int], x_max: int) -> None:
+    chosen_seeds = list(seed_list)[:3]
+    if not chosen_seeds:
+        return
+    if len(chosen_seeds) == 2:
+        print(f"[final_csv] task with 2 seeds: {task}")
+
+    step_grid = np.arange(0, x_max + GRID_STEP, GRID_STEP, dtype=int)
+    rows = []
+    for mapped_seed, orig_seed in enumerate(chosen_seeds, start=1):
+        sdf = df[df["seed"] == orig_seed].sort_values("step")
+        if sdf.empty:
+            continue
+        series = pd.Series(
+            sdf["reward"].to_numpy(dtype=float),
+            index=sdf["step"].to_numpy(dtype=float),
+        )
+        aligned = series.reindex(step_grid.astype(float)).interpolate(method="index", limit_area="inside")
+        for step, reward in zip(step_grid, aligned.to_numpy(dtype=float)):
+            if not np.isfinite(reward):
+                continue
+            rows.append({"step": int(step), "reward": round(float(reward), 1), "seed": mapped_seed})
+
+    out_df = pd.DataFrame(rows, columns=["step", "reward", "seed"])
+    FINAL_CSV_DIR.mkdir(parents=True, exist_ok=True)
+    out_path = FINAL_CSV_DIR / f"{task}.csv"
+    out_df.to_csv(out_path, index=False)
+
 def plot_all(args: argparse.Namespace) -> None:
     labels = dict(DEFAULT_LABELS)
     labels["ours"] = args.ours_legend
@@ -331,6 +361,9 @@ def plot_all(args: argparse.Namespace) -> None:
             ax.plot(step_grid, upper, color=color, linewidth=1.0, alpha=ci_alpha)
             ax.plot(step_grid, lower, color=color, linewidth=1.0, alpha=ci_alpha)
             ax.fill_between(step_grid, lower, upper, color=color, alpha=fill_alpha, linewidth=0)
+
+            if method == "ours":
+                export_task_final_csv(task, df, seed_list, TASK_MAX_STEP[task])
 
             if idx == 0:
                 legend_handles.append(line)
