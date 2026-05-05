@@ -53,7 +53,7 @@ GRID_STEP = 100_000
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--baseline-root", type=Path, default=Path("/workspace/tdmpc2/results"))
+    p.add_argument("--baseline-root", type=Path, default=Path("/root/workspace/tdmpc2/results"))
     p.add_argument("--ours-root", type=Path, default=Path("/media/datasets/cheliu21/cxy_worldmodel/final_csv"))
     p.add_argument("--out", type=Path, default=Path("figures/Overall.pdf"))
     return p.parse_args()
@@ -114,6 +114,16 @@ def domain_method_stats(method: str, domain: str, spec: dict, baseline_root: Pat
 
 def main() -> None:
     args = parse_args()
+    if not args.baseline_root.exists():
+        alt_root = Path("/workspace/tdmpc2/results")
+        if alt_root.exists():
+            print(f"[plot_overall] baseline-root not found: {args.baseline_root}; fallback to {alt_root}")
+            args.baseline_root = alt_root
+    if not args.baseline_root.exists():
+        raise FileNotFoundError(
+            f"baseline-root does not exist: {args.baseline_root}; "
+            "please set --baseline-root to the folder containing sac/dreamerv3/tdmpc/tdmpc2"
+        )
     plt.rcParams.update({"font.size": 14, "axes.titlesize": 20, "axes.labelsize": 16, "legend.fontsize": 16})
     fig, axes = plt.subplots(1, 4, figsize=(16, 4), dpi=200)
     for ax, (domain, spec) in zip(axes, DOMAIN_SPECS.items()):
