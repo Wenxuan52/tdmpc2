@@ -46,6 +46,7 @@ P_MEAN_ALPHA = 0.45
 X_MAX = 1_000_000
 X_TICKS = np.linspace(0, X_MAX, 6)
 X_TICK_LABELS = [f"{v:.1f}" for v in np.linspace(0.0, 1.0, 6)]
+EMA_ALPHA = 0.4
 
 # Optional per-task y-axis bounds override: {"task-name": (ymin, ymax)}
 Y_BOUNDS_OVERRIDE: Dict[str, tuple[float, float]] = {}
@@ -109,6 +110,19 @@ def _interp(series_df: pd.DataFrame, col: str, x_grid: np.ndarray) -> np.ndarray
     return aligned.interpolate(method="index", limit_area="inside").to_numpy(dtype=float)
 
 
+def _ema(values: np.ndarray, alpha: float = EMA_ALPHA) -> np.ndarray:
+    out = values.astype(float, copy=True)
+    finite_idx = np.flatnonzero(np.isfinite(out))
+    if finite_idx.size == 0:
+        return out
+
+    prev = out[finite_idx[0]]
+    for idx in finite_idx[1:]:
+        prev = alpha * out[idx] + (1.0 - alpha) * prev
+        out[idx] = prev
+    return out
+
+
 def _mean_se(curves: List[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
     arr = np.vstack(curves)
     n = np.sum(np.isfinite(arr), axis=0)
@@ -146,6 +160,8 @@ def _compute_unified_ymax(seed_cfg: Dict[str, Dict[str, List[int]]], x_grid: np.
                 continue
             p_mean, _ = _mean_se(p_curves)
             m_mean, _ = _mean_se(m_curves)
+            p_mean = _ema(p_mean)
+            m_mean = _ema(m_mean)
             vals = np.concatenate([p_mean[np.isfinite(p_mean)], m_mean[np.isfinite(m_mean)]])
             method_ymax.append((float(np.max(vals)) + 0.01) if vals.size else 0.05)
         out[task] = max(min(method_ymax), 0.05)
@@ -172,6 +188,8 @@ def main() -> None:
                     if p_curves and m_curves:
                         p_mean, p_se = _mean_se(p_curves)
                         m_mean, m_se = _mean_se(m_curves)
+                        p_mean = _ema(p_mean)
+                        m_mean = _ema(m_mean)
                         ax.plot(x_grid, p_mean, ls="-", lw=2.0, alpha=P_MEAN_ALPHA, color=POLICY_COLOR, label="Policy network")
                         ax.fill_between(x_grid, p_mean - p_se, p_mean + p_se, color=POLICY_COLOR, alpha=0.14, linewidth=0)
                         ax.plot(x_grid, m_mean, lw=2.0, alpha=MEAN_ALPHA, color=meta["color"], label=meta["label"])
