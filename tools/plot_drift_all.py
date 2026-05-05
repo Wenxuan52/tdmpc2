@@ -27,13 +27,13 @@ DM_TASKS = ["acrobot-swingup", "cheetah-run", "dog-trot", "humanoid-walk"]
 MW_TASKS = ["mw-button-press-wall", "mw-handle-pull-side", "mw-pick-place", "mw-window-open"]
 
 FONT = {"title": 24, "axis_label": 22, "ticks": 19, "legend": 20, "big_title": 30, "big_legend": 22}
-MEAN_ALPHA = 0.75
+MEAN_ALPHA = 0.95
 EMA_WINDOW = 25
 EMA_ALPHA = 0.2
 METHOD_META = {
-    "MPPI": {"drift_col": "action_drift/mppi", "gap_col": "planner_gap/mppi_to_policy", "label": "MPPI", "color": "#1f77b4"},
-    "Beta0.0": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.0)", "color": "#ff7f0e"},
-    "Beta0.1": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.1)", "color": "#2ca02c"},
+    "MPPI": {"drift_col": "action_drift/mppi", "gap_col": "planner_gap/mppi_to_policy", "label": "MPPI", "color": "#7fd54c"},
+    "Beta0.0": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.0)", "color": "#5da7df"},
+    "Beta0.1": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.1)", "color": "#5ad7c3"},
 }
 METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
 STEP_STAGES = [(0, 250_000), (250_000, 500_000), (500_000, 750_000), (750_000, 1_000_000)]
@@ -105,7 +105,7 @@ def _load_task_seed(task: str, seed: int) -> pd.DataFrame:
 
 def _shade_color(hex_color: str, level: int, total_levels: int = 4) -> str:
     base = np.array(mcolors.to_rgb(hex_color))
-    mix = 0.88 - 0.58 * (level / max(total_levels - 1, 1))
+    mix = 0.75 - 0.75 * (level / max(total_levels - 1, 1))
     return mcolors.to_hex(base * (1.0 - mix) + np.ones(3) * mix)
 
 
@@ -177,11 +177,15 @@ def _style_axes(ax: plt.Axes, title: str, y_label: str, y_lim: tuple[float, floa
     ax.set_ylim(*y_lim)
     ax.tick_params(axis="y", labelsize=FONT["ticks"])
     ax.set_facecolor("white")
-    ax.grid(color="#d9d9d9", linewidth=1.8, axis="both")
-    for spine in ax.spines.values():
-        spine.set_visible(True)
-        spine.set_color("black")
-        spine.set_linewidth(1.6)
+    ax.grid(color="#d9d9d9", linewidth=0.8, alpha=0.25, axis="both")
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
+    ax.spines["left"].set_visible(True)
+    ax.spines["bottom"].set_visible(True)
+    ax.spines["left"].set_color("black")
+    ax.spines["bottom"].set_color("black")
+    ax.spines["left"].set_linewidth(1.6)
+    ax.spines["bottom"].set_linewidth(1.6)
 
 
 def _collect_drift_stage_values(tasks: List[str], method: str, seed_cfg: Dict[str, Dict[str, List[int]]], domain: str) -> List[np.ndarray]:
@@ -220,7 +224,7 @@ def _collect_drift_stage_values(tasks: List[str], method: str, seed_cfg: Dict[st
     return [np.asarray(v, dtype=float) for v in grouped]
 
 
-def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], domain_name: str, show_y_label: bool, title: str = "", show_xlabel: bool = True, y_lim: tuple[float, float] | None = None, legend_inside: bool = False) -> None:
+def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], domain_name: str, show_y_label: bool, title: str = "", show_xlabel: bool = True, y_lim: tuple[float, float] | None = None, legend_inside: bool = False, horizontal: bool = False) -> None:
     centers = np.arange(len(METHODS_TO_PLOT), dtype=float)
     width = 0.16
     offsets = np.array([-0.24, -0.08, 0.08, 0.24])
@@ -232,7 +236,7 @@ def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str
                 continue
             pos = centers[m_idx] + offsets[s_idx]
             color = _shade_color(METHOD_META[method]["color"], s_idx, len(STEP_STAGES))
-            ax.boxplot(values, positions=[pos], widths=width, patch_artist=True,
+            ax.boxplot(values, positions=[pos], widths=width, patch_artist=True, vert=not horizontal,
                 boxprops=dict(facecolor=color, edgecolor="black", linewidth=1.8),
                 medianprops=dict(color="black", linewidth=1.8), whiskerprops=dict(color="black", linewidth=1.8),
                 capprops=dict(color="black", linewidth=1.8),
@@ -247,17 +251,25 @@ def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str
         y_min, y_max = y_min - pad, y_max + pad
     else:
         y_min, y_max = (0.0, 0.05)
-    ax.set_xticks(centers)
-    ax.set_xticklabels(["MPPI", "Beta0.0", "Beta0.1"], fontsize=FONT["ticks"])
-    _style_axes(ax, title, "Normalized Drift", (y_min, y_max), show_y_label=show_y_label, use_time_axis=False)
+    if horizontal:
+        ax.set_yticks(centers)
+        ax.set_yticklabels(["MPPI", r"$\beta=0.0$", r"$\beta=0.1$"], fontsize=FONT["ticks"])
+        _style_axes(ax, title, "Methods", (centers.min() - 0.45, centers.max() + 0.45), show_y_label=show_y_label, use_time_axis=False)
+        ax.set_xlim(y_min, y_max)
+        ax.set_xlabel("Normalized Drift", fontsize=FONT["axis_label"])
+        ax.invert_yaxis()
+    else:
+        ax.set_xticks(centers)
+        ax.set_xticklabels(["MPPI", "Beta0.0", "Beta0.1"], fontsize=FONT["ticks"])
+        _style_axes(ax, title, "Normalized Drift", (y_min, y_max), show_y_label=show_y_label, use_time_axis=False)
     if not show_xlabel:
         ax.set_xlabel("")
-    ax.grid(axis="x", visible=False)
+    ax.grid(axis="x" if not horizontal else "y", visible=False)
     gray_handles = [Patch(facecolor=_shade_color("#666666", i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
     if legend_inside:
         ax.legend(handles=gray_handles, fontsize=FONT["legend"] - 2, loc="upper right", frameon=True)
     else:
-        ax.legend(handles=gray_handles, fontsize=FONT["legend"], loc="upper center", bbox_to_anchor=(0.5, -0.16), ncol=4, frameon=True)
+        ax.legend(handles=gray_handles, fontsize=FONT["legend"], loc="center left", bbox_to_anchor=(1.02, 0.5), ncol=1, frameon=False, borderaxespad=0.0)
 
 
 def _plot_drift_line(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str, List[int]]], x_grid: np.ndarray, domain_name: str, show_y_label: bool, title: str = "") -> None:
@@ -266,8 +278,8 @@ def _plot_drift_line(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[st
         arr = _collect_samples(tasks, method, "Drift", seed_cfg, x_grid, domain_name)
         mean, se = _mean_se(arr)
         mean, se = _ema_smooth(mean), _ema_smooth(se)
-        ax.plot(x_grid, mean, lw=2.0, color=METHOD_META[method]["color"], alpha=MEAN_ALPHA, label=METHOD_META[method]["label"])
-        ax.fill_between(x_grid, mean - se, mean + se, color=METHOD_META[method]["color"], alpha=0.18)
+        ax.plot(x_grid, mean, lw=2.3, color=METHOD_META[method]["color"], alpha=MEAN_ALPHA, label=METHOD_META[method]["label"])
+        ax.fill_between(x_grid, mean - se, mean + se, color=METHOD_META[method]["color"], alpha=0.14, linewidth=0)
         finite = mean[np.isfinite(mean)]
         if finite.size:
             all_min.append(float(np.min(finite))); all_max.append(float(np.max(finite)))
@@ -307,11 +319,11 @@ def main() -> None:
         axes[1].set_ylim((-0.71, 0.81))
         _plot_drift_box(
             axes[1], tasks, seed_cfg, domain_name, show_y_label=False, title="", show_xlabel=False,
-            y_lim=DRIFT_BOXPLOT_YLIM, legend_inside=True,
+            y_lim=DRIFT_BOXPLOT_YLIM, legend_inside=True, horizontal=True,
         )
         handles, labels = axes[0].get_legend_handles_labels()
         fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, -0.01), fontsize=FONT["legend"], frameon=False)
-        fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
+        fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0]); fig.subplots_adjust(wspace=0.22)
     else:
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
         for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
