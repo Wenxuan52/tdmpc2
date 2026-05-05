@@ -44,11 +44,24 @@ DOMAIN_SPECS = {
         "y_lim": (-2, 102),
     },
     "ManiSkill2": {"tasks": ["lift-cube", "pick-cube", "pick-ycb", "stack-cube", "turn-faucet"], "x_max": 4_000_000, "y_lim": (-2, 102)},
-    "MyoSuite": {"tasks": ["myo-key-turn","myo-key-turn-hard","myo-obj-hold","myo-obj-hold-hard","myo-pen-twirl","myo-pen-twirl-hard","myo-pose","myo-pose-hard","myo-reach","myo-reach-hard"], "x_max": 2_000_000, "y_lim": (-2, 102)},
+    "MyoSuite": {"tasks": ["myo-hand-key-turn","myo-hand-key-turn-hard","myo-hand-obj-hold","myo-hand-obj-hold-hard","myo-hand-pen-twirl","myo-hand-pen-twirl-hard","myo-hand-pose","myo-hand-pose-hard","myo-hand-reach","myo-hand-reach-hard"], "x_max": 2_000_000, "y_lim": (-2, 102)},
 }
 
 SEEDS = [1, 2, 3]
 GRID_STEP = 100_000
+TASK_ALIASES = {
+    # Keep backward compatibility with previously used task names.
+    "myo-hand-key-turn": ["myo-key-turn"],
+    "myo-hand-key-turn-hard": ["myo-key-turn-hard"],
+    "myo-hand-obj-hold": ["myo-obj-hold"],
+    "myo-hand-obj-hold-hard": ["myo-obj-hold-hard"],
+    "myo-hand-pen-twirl": ["myo-pen-twirl"],
+    "myo-hand-pen-twirl-hard": ["myo-pen-twirl-hard"],
+    "myo-hand-pose": ["myo-pose"],
+    "myo-hand-pose-hard": ["myo-pose-hard"],
+    "myo-hand-reach": ["myo-reach"],
+    "myo-hand-reach-hard": ["myo-reach-hard"],
+}
 
 
 def parse_args() -> argparse.Namespace:
@@ -95,13 +108,25 @@ def seed_curve(df: pd.DataFrame, seed: int, step_grid: np.ndarray) -> np.ndarray
     return np.interp(step_grid, x, y)
 
 
+def resolve_task_csv(root: Path, task: str) -> Path:
+    candidates = [task, *TASK_ALIASES.get(task, [])]
+    for name in candidates:
+        p = root / f"{name}.csv"
+        if p.exists():
+            return p
+    return root / f"{task}.csv"
+
+
 def domain_method_stats(method: str, domain: str, spec: dict, baseline_root: Path, ours_root: Path):
     step_grid = np.arange(0, spec["x_max"] + 1, GRID_STEP)
     agg_seed_curves = []
     for seed in SEEDS:
         task_curves = []
         for task in spec["tasks"]:
-            path = (ours_root / f"{task}.csv") if method == "ours" else (baseline_root / METHOD_DIR[method] / f"{task}.csv")
+            if method == "ours":
+                path = resolve_task_csv(ours_root, task)
+            else:
+                path = resolve_task_csv(baseline_root / METHOD_DIR[method], task)
             df = read_csv(path)
             c = seed_curve(df, seed, step_grid)
             if not np.all(np.isnan(c)):
