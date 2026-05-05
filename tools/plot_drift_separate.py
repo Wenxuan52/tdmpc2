@@ -18,9 +18,9 @@ OUT_PATH = Path("figures/drift_separate_mppi.pdf")
 # METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
 METHODS_TO_PLOT = ["MPPI"]
 METHOD_META = {
-    "MPPI": {"planner_col": "action_drift/mppi", "label": "MPPI", "color": "#1f77b4"},
-    "Beta0.0": {"planner_col": "action_drift/diffusion", "label": "Beta 0.0", "color": "#ff7f0e"},
-    "Beta0.1": {"planner_col": "action_drift/diffusion", "label": "Beta 0.1", "color": "#2ca02c"},
+    "MPPI": {"planner_col": "action_drift/mppi", "label": "MPPI", "color": "#7fd54c"},
+    "Beta0.0": {"planner_col": "action_drift/diffusion", "label": "Beta 0.0", "color": "#5da7df"},
+    "Beta0.1": {"planner_col": "action_drift/diffusion", "label": "Beta 0.1", "color": "#5ad7c3"},
 }
 
 TASK_GRID = [
@@ -172,9 +172,9 @@ def main() -> None:
                         p_mean, p_se = _mean_se(p_curves)
                         m_mean, m_se = _mean_se(m_curves)
                         ax.plot(x_grid, p_mean, ls="-", lw=2.0, alpha=MEAN_ALPHA, color=POLICY_COLOR, label="Policy network")
-                        ax.fill_between(x_grid, p_mean - p_se, p_mean + p_se, color=POLICY_COLOR, alpha=0.18)
+                        ax.fill_between(x_grid, p_mean - p_se, p_mean + p_se, color=POLICY_COLOR, alpha=0.14, linewidth=0)
                         ax.plot(x_grid, m_mean, lw=2.0, alpha=MEAN_ALPHA, color=meta["color"], label=meta["label"])
-                        ax.fill_between(x_grid, m_mean - m_se, m_mean + m_se, color=meta["color"], alpha=0.18)
+                        ax.fill_between(x_grid, m_mean - m_se, m_mean + m_se, color=meta["color"], alpha=0.14, linewidth=0)
 
                     ymin, ymax = (0.0, unified_ymax.get(task, 0.05))
                     if task in Y_BOUNDS_OVERRIDE:
@@ -184,9 +184,15 @@ def main() -> None:
                     ax.set_yticklabels([f"{ymin:.1f}", f"{ymax:.1f}"], fontsize=FONT["ticks"])
                     ax.set_title(_prettify_task(task), fontsize=FONT["title"])
                     ax.set_facecolor("#f2f2f2")
-                    ax.grid(color="#d9d9d9", linewidth=3.0)
-                    for spine in ax.spines.values():
-                        spine.set_visible(False)
+                    ax.grid(color="#d9d9d9", linewidth=0.8, alpha=0.55)
+                    ax.spines["top"].set_visible(False)
+                    ax.spines["right"].set_visible(False)
+                    ax.spines["left"].set_visible(True)
+                    ax.spines["bottom"].set_visible(True)
+                    ax.spines["left"].set_color("black")
+                    ax.spines["bottom"].set_color("black")
+                    ax.spines["left"].set_linewidth(1.2)
+                    ax.spines["bottom"].set_linewidth(1.2)
 
                     if r == 3:
                         ax.set_xlabel("Time steps (1M)", fontsize=FONT["axis_label"])
