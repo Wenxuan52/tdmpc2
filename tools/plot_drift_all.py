@@ -253,7 +253,7 @@ def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str
         y_min, y_max = (0.0, 0.05)
     if horizontal:
         ax.set_yticks(centers)
-        ax.set_yticklabels(["MPPI", "Beta0.0", "Beta0.1"], fontsize=FONT["ticks"])
+        ax.set_yticklabels(["MPPI", r"$\beta=0.0$", r"$\beta=0.1$"], fontsize=FONT["ticks"])
         _style_axes(ax, title, "Methods", (centers.min() - 0.45, centers.max() + 0.45), show_y_label=show_y_label, use_time_axis=False)
         ax.set_xlim(y_min, y_max)
         ax.set_xlabel("Normalized Drift", fontsize=FONT["axis_label"])
@@ -265,8 +265,7 @@ def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str
     if not show_xlabel:
         ax.set_xlabel("")
     ax.grid(axis="x" if not horizontal else "y", visible=False)
-    legend_base_color = METHOD_META["MPPI"]["color"]
-    gray_handles = [Patch(facecolor=_shade_color(legend_base_color, i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
+    gray_handles = [Patch(facecolor=_shade_color("#666666", i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
     if legend_inside:
         ax.legend(handles=gray_handles, fontsize=FONT["legend"] - 2, loc="upper right", frameon=True)
     else:
