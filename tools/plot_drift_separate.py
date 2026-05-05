@@ -13,10 +13,10 @@ from matplotlib.backends.backend_pdf import PdfPages
 
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/separate_seed.yaml")
-OUT_PATH = Path("figures/drift_separate_mppi.pdf")
+OUT_PATH = Path("figures/drift_separate_beta0.1.pdf")
 
 # METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
-METHODS_TO_PLOT = ["MPPI"]
+METHODS_TO_PLOT = ["Beta0.1"]
 METHOD_META = {
     "MPPI": {"planner_col": "action_drift/mppi", "label": "MPPI", "color": "#4C9A2A"},
     "Beta0.0": {"planner_col": "action_drift/diffusion", "label": "Beta 0.0", "color": "#2F78B7"},

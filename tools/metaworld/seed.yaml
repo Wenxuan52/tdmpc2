@@ -35,7 +35,7 @@ mw-dial-turn:
   - seed = [4, 5, 6]
   - source = csv
 mw-disassemble:
-  - seed = [5, 6]
+  - seed = [4, 5, 6]
   - source = csv
 mw-door-close:
   - seed = [4, 5, 6]

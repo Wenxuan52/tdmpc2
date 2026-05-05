@@ -28,7 +28,7 @@ VISUAL_TASKS: List[str] = [
 METHODS = ["ours", "tdmpc2"]
 COLORS = {
     "ours": "#d64a4b",
-    "tdmpc2": "#7fd54c",
+    "tdmpc2": "#7CB342",
 }
 
 DEFAULT_LABELS = {
