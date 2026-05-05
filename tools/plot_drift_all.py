@@ -15,7 +15,7 @@ import pandas as pd
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/all_seed.yaml")
 PLOT_MODE = "Gap"  # choose from: "Drift", "Gap", "All"
-DRIFT_BOXPLOT_YLIM = (-0.71, 0.81)
+DRIFT_BOXPLOT_YLIM = (-0.71, 0.91)
 
 EPS = 1e-8
 POLICY_DENOM_FLOOR = 1e-3
@@ -29,7 +29,7 @@ MW_TASKS = ["mw-button-press-wall", "mw-handle-pull-side", "mw-pick-place", "mw-
 FONT = {"title": 24, "axis_label": 22, "ticks": 19, "legend": 20, "big_title": 30, "big_legend": 22}
 MEAN_ALPHA = 0.95
 EMA_WINDOW = 25
-EMA_ALPHA = 0.2
+EMA_ALPHA = 0.1
 METHOD_META = {
     "MPPI": {"drift_col": "action_drift/mppi", "gap_col": "planner_gap/mppi_to_policy", "label": "MPPI", "color": "#7fd54c"},
     "Beta0.0": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.0)", "color": "#5da7df"},
@@ -177,7 +177,7 @@ def _style_axes(ax: plt.Axes, title: str, y_label: str, y_lim: tuple[float, floa
     ax.set_ylim(*y_lim)
     ax.tick_params(axis="y", labelsize=FONT["ticks"])
     ax.set_facecolor("white")
-    ax.grid(color="#d9d9d9", linewidth=0.8, alpha=0.25, axis="both")
+    ax.grid(color="#d9d9d9", linewidth=0.8, alpha=0.55, axis="both")
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
     ax.spines["left"].set_visible(True)
@@ -267,7 +267,7 @@ def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str
     ax.grid(axis="x" if not horizontal else "y", visible=False)
     gray_handles = [Patch(facecolor=_shade_color("#666666", i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
     if legend_inside:
-        ax.legend(handles=gray_handles, fontsize=FONT["legend"] - 2, loc="upper right", frameon=True)
+        ax.legend(handles=gray_handles, fontsize=FONT["legend"] - 2, loc="center right", frameon=True)
     else:
         ax.legend(handles=gray_handles, fontsize=FONT["legend"], loc="center left", bbox_to_anchor=(1.02, 0.5), ncol=1, frameon=False, borderaxespad=0.0)
 

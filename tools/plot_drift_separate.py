@@ -18,9 +18,9 @@ OUT_PATH = Path("figures/drift_separate_mppi.pdf")
 # METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
 METHODS_TO_PLOT = ["MPPI"]
 METHOD_META = {
-    "MPPI": {"planner_col": "action_drift/mppi", "label": "MPPI", "color": "#7fd54c"},
-    "Beta0.0": {"planner_col": "action_drift/diffusion", "label": "Beta 0.0", "color": "#5da7df"},
-    "Beta0.1": {"planner_col": "action_drift/diffusion", "label": "Beta 0.1", "color": "#5ad7c3"},
+    "MPPI": {"planner_col": "action_drift/mppi", "label": "MPPI", "color": "#4C9A2A"},
+    "Beta0.0": {"planner_col": "action_drift/diffusion", "label": "Beta 0.0", "color": "#2F78B7"},
+    "Beta0.1": {"planner_col": "action_drift/diffusion", "label": "Beta 0.1", "color": "#1FAE9A"},
 }
 
 TASK_GRID = [
@@ -41,7 +41,8 @@ FONT = {
 
 POLICY_COL = "action_drift/pi"
 POLICY_COLOR = "#9e9e9e"
-MEAN_ALPHA = 0.75
+MEAN_ALPHA = 0.65
+P_MEAN_ALPHA = 0.45
 X_MAX = 1_000_000
 X_TICKS = np.linspace(0, X_MAX, 6)
 X_TICK_LABELS = [f"{v:.1f}" for v in np.linspace(0.0, 1.0, 6)]
@@ -171,7 +172,7 @@ def main() -> None:
                     if p_curves and m_curves:
                         p_mean, p_se = _mean_se(p_curves)
                         m_mean, m_se = _mean_se(m_curves)
-                        ax.plot(x_grid, p_mean, ls="-", lw=2.0, alpha=MEAN_ALPHA, color=POLICY_COLOR, label="Policy network")
+                        ax.plot(x_grid, p_mean, ls="-", lw=2.0, alpha=P_MEAN_ALPHA, color=POLICY_COLOR, label="Policy network")
                         ax.fill_between(x_grid, p_mean - p_se, p_mean + p_se, color=POLICY_COLOR, alpha=0.14, linewidth=0)
                         ax.plot(x_grid, m_mean, lw=2.0, alpha=MEAN_ALPHA, color=meta["color"], label=meta["label"])
                         ax.fill_between(x_grid, m_mean - m_se, m_mean + m_se, color=meta["color"], alpha=0.14, linewidth=0)
