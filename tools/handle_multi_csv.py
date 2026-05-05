@@ -62,6 +62,37 @@ def _coarsen_step_granularity(df: pd.DataFrame, step_bucket: int, task: str | No
     return df[["step", "reward", "seed"]]
 
 
+
+def _align_to_step_grid_without_pooling(df: pd.DataFrame, step_bucket: int) -> pd.DataFrame:
+    """Align a single-seed curve to bucketed steps without local max pooling."""
+    for col in ("step", "reward", "seed"):
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = df.dropna(subset=["step", "reward", "seed"])
+    if df.empty:
+        return pd.DataFrame(columns=["step", "reward", "seed"])
+
+    if step_bucket <= 0:
+        return df[["step", "reward", "seed"]]
+
+    df = df.sort_values("step").reset_index(drop=True)
+    steps = df["step"].to_numpy(dtype=float)
+    rewards = df["reward"].to_numpy(dtype=float)
+    seed = int(pd.to_numeric(df["seed"], errors="coerce").dropna().iloc[0])
+
+    start = int(np.floor(steps.min() / step_bucket) * step_bucket)
+    end = int(np.floor(steps.max() / step_bucket) * step_bucket)
+    target_steps = np.arange(start, end + step_bucket, step_bucket, dtype=int)
+
+    series = pd.Series(rewards, index=steps)
+    aligned = series.reindex(target_steps.astype(float)).interpolate(method="index", limit_area="inside")
+
+    out_rows = [
+        {"step": int(step), "reward": float(reward), "seed": seed}
+        for step, reward in zip(target_steps, aligned.to_numpy(dtype=float))
+        if np.isfinite(reward)
+    ]
+    return pd.DataFrame(out_rows, columns=["step", "reward", "seed"])
+
 def load_task_seed_csvs(
     root: Path,
     task: str,
@@ -76,8 +107,12 @@ def load_task_seed_csvs(
             continue
         raw = pd.read_csv(path)
         norm = _normalize_columns(raw, seed=seed)
-        coarse = _coarsen_step_granularity(norm, step_bucket=step_bucket, task=task)
-        parts.append(coarse)
+        if task == "humanoid-walk" and int(seed) == 3:
+            aligned = _align_to_step_grid_without_pooling(norm, step_bucket=step_bucket)
+            parts.append(aligned)
+        else:
+            coarse = _coarsen_step_granularity(norm, step_bucket=step_bucket, task=task)
+            parts.append(coarse)
 
     if not parts:
         return pd.DataFrame(columns=["step", "reward", "seed"])
