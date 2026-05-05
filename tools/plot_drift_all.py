@@ -33,7 +33,7 @@ EMA_ALPHA = 0.2
 METHOD_META = {
     "MPPI": {"drift_col": "action_drift/mppi", "gap_col": "planner_gap/mppi_to_policy", "label": "MPPI", "color": "#7fd54c"},
     "Beta0.0": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.0)", "color": "#5da7df"},
-    "Beta0.1": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.1)", "color": "#8a6bc7"},
+    "Beta0.1": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.1)", "color": "#5ad7c3"},
 }
 METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
 STEP_STAGES = [(0, 250_000), (250_000, 500_000), (500_000, 750_000), (750_000, 1_000_000)]
@@ -105,7 +105,7 @@ def _load_task_seed(task: str, seed: int) -> pd.DataFrame:
 
 def _shade_color(hex_color: str, level: int, total_levels: int = 4) -> str:
     base = np.array(mcolors.to_rgb(hex_color))
-    mix = 0.88 - 0.58 * (level / max(total_levels - 1, 1))
+    mix = 0.75 - 0.75 * (level / max(total_levels - 1, 1))
     return mcolors.to_hex(base * (1.0 - mix) + np.ones(3) * mix)
 
 
@@ -257,6 +257,7 @@ def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str
         _style_axes(ax, title, "Methods", (centers.min() - 0.45, centers.max() + 0.45), show_y_label=show_y_label, use_time_axis=False)
         ax.set_xlim(y_min, y_max)
         ax.set_xlabel("Normalized Drift", fontsize=FONT["axis_label"])
+        ax.invert_yaxis()
     else:
         ax.set_xticks(centers)
         ax.set_xticklabels(["MPPI", "Beta0.0", "Beta0.1"], fontsize=FONT["ticks"])
@@ -264,7 +265,8 @@ def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str
     if not show_xlabel:
         ax.set_xlabel("")
     ax.grid(axis="x" if not horizontal else "y", visible=False)
-    gray_handles = [Patch(facecolor=_shade_color("#666666", i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
+    legend_base_color = METHOD_META["MPPI"]["color"]
+    gray_handles = [Patch(facecolor=_shade_color(legend_base_color, i, len(STEP_STAGES)), edgecolor="black", label=lab) for i, lab in enumerate(STAGE_LABELS)]
     if legend_inside:
         ax.legend(handles=gray_handles, fontsize=FONT["legend"] - 2, loc="upper right", frameon=True)
     else:
@@ -318,11 +320,11 @@ def main() -> None:
         axes[1].set_ylim((-0.71, 0.81))
         _plot_drift_box(
             axes[1], tasks, seed_cfg, domain_name, show_y_label=False, title="", show_xlabel=False,
-            y_lim=DRIFT_BOXPLOT_YLIM, legend_inside=False, horizontal=True,
+            y_lim=DRIFT_BOXPLOT_YLIM, legend_inside=True, horizontal=True,
         )
         handles, labels = axes[0].get_legend_handles_labels()
         fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, -0.01), fontsize=FONT["legend"], frameon=False)
-        fig.tight_layout(rect=[0.02, 0.10, 0.90, 1.0]); fig.subplots_adjust(wspace=0.22)
+        fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0]); fig.subplots_adjust(wspace=0.22)
     else:
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
         for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
