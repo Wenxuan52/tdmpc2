@@ -67,6 +67,12 @@ def read_csv(path: Path) -> pd.DataFrame:
         out = df[["step", "reward", "seed"]].copy()
     elif {"step", "success", "seed"}.issubset(df.columns):
         out = df[["step", "success", "seed"]].rename(columns={"success": "reward"}).copy()
+        # Meta-World / ManiSkill2 / MyoSuite baselines are often stored as
+        # success ratio in [0, 1]. Convert to percentage [0, 100] so the
+        # domain-scale matches Ours and the target y-axis.
+        max_abs = np.nanmax(np.abs(pd.to_numeric(out["reward"], errors="coerce")))
+        if np.isfinite(max_abs) and max_abs <= 1.5:
+            out["reward"] = pd.to_numeric(out["reward"], errors="coerce") * 100.0
     else:
         raise ValueError(f"{path} missing columns")
     for c in ["step", "reward", "seed"]:
