@@ -14,8 +14,8 @@ import pandas as pd
 
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/all_seed.yaml")
-PLOT_MODE = "All"  # choose from: "Drift", "Gap", "All"
-DRIFT_BOXPLOT_YLIM = (-0.71, 0.71)
+PLOT_MODE = "Gap"  # choose from: "Drift", "Gap", "All"
+DRIFT_BOXPLOT_YLIM = (-0.71, 0.81)
 
 EPS = 1e-8
 POLICY_DENOM_FLOOR = 1e-3
@@ -298,26 +298,27 @@ def main() -> None:
         ax.axhline(0.0, color="#4d4d4d", linestyle="--", linewidth=2.0, alpha=0.95, zorder=1)
         fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0])
     elif PLOT_MODE == "Gap":
-        fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=False)
+        fig, axes = plt.subplots(1, 2, figsize=(18, 5.5), sharex=False)
         domain_name, _, tasks = domain_cfg[1]  # Meta World only
         _plot_drift_line(axes[0], tasks, seed_cfg, x_grid, domain_name, show_y_label=False, title="")
         axes[0].set_xlabel("")
         axes[0].set_xticks(X_TICKS)
         axes[0].set_xticklabels(["0k", "200k", "400k", "600k", "800k", "1M"], fontsize=FONT["ticks"])
+        axes[1].set_ylim((-0.71, 0.81))
         _plot_drift_box(
             axes[1], tasks, seed_cfg, domain_name, show_y_label=False, title="", show_xlabel=False,
             y_lim=DRIFT_BOXPLOT_YLIM, legend_inside=True,
         )
         handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["legend"], frameon=False)
-        fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
+        fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, -0.01), fontsize=FONT["legend"], frameon=False)
+        fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
     else:
         fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
         for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
             _plot_drift_line(ax, tasks, seed_cfg, x_grid, domain_name, show_y_label=(idx == 0), title=title)
         handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, 0.01), fontsize=FONT["legend"], frameon=False)
-        fig.tight_layout(rect=[0.02, 0.08, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
+        fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, -0.01), fontsize=FONT["legend"], frameon=False)
+        fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
 
     fig.savefig(out_path)
     plt.close(fig)
