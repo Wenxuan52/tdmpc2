@@ -12,6 +12,7 @@ import numpy as np
 import pandas as pd
 
 METHODS = ["ours", "tdmpc2", "tdmpc", "dreamerv3", "sac"]
+DRAW_ORDER = ["tdmpc2", "tdmpc", "dreamerv3", "sac", "ours"]
 METHOD_DIR = {"tdmpc2": "tdmpc2", "tdmpc": "tdmpc", "dreamerv3": "dreamerv3", "sac": "sac"}
 COLORS = {
     "ours": "#d64a4b",
@@ -166,7 +167,7 @@ def main() -> None:
     plt.rcParams.update({"font.size": 14, "axes.titlesize": 20, "axes.labelsize": 16, "legend.fontsize": 16})
     fig, axes = plt.subplots(1, 4, figsize=(16, 4), dpi=200)
     for ax, (domain, spec) in zip(axes, DOMAIN_SPECS.items()):
-        for method in METHODS:
+        for method in DRAW_ORDER:
             x, m, lo, hi = domain_method_stats(method, domain, spec, args.baseline_root, args.ours_root)
             line_alpha = 1.0 if method == "ours" else 0.65
             ax.plot(x, m, color=COLORS[method], lw=2.8, label=DEFAULT_LABELS[method], alpha=line_alpha)
