@@ -160,13 +160,24 @@ def _load_ours_task_csvs(root: Path, task: str, seeds: List[int]) -> pd.DataFram
         rewards = norm["reward"].to_numpy(dtype=float)
 
         target_steps = np.arange(0, X_MAX + GRID_STEP, GRID_STEP, dtype=int)
-        out_rows = []
-        for target in target_steps:
-            nearest_idx = np.argsort(np.abs(steps - target))[:100]
-            if nearest_idx.size == 0:
-                continue
-            pooled_reward = float(np.nanmax(rewards[nearest_idx]))
-            out_rows.append({"step": int(target), "reward": pooled_reward, "seed": int(seed)})
+        if task == "walker-run":
+            series = pd.Series(rewards, index=steps)
+            aligned = series.reindex(target_steps.astype(float)).interpolate(
+                method="index", limit_area="inside"
+            )
+            out_rows = [
+                {"step": int(step), "reward": float(reward), "seed": int(seed)}
+                for step, reward in zip(target_steps, aligned.to_numpy(dtype=float))
+                if np.isfinite(reward)
+            ]
+        else:
+            out_rows = []
+            for target in target_steps:
+                nearest_idx = np.argsort(np.abs(steps - target))[:100]
+                if nearest_idx.size == 0:
+                    continue
+                pooled_reward = float(np.nanmax(rewards[nearest_idx]))
+                out_rows.append({"step": int(target), "reward": pooled_reward, "seed": int(seed)})
 
         parts.append(pd.DataFrame(out_rows, columns=["step", "reward", "seed"]))
 
