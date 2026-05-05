@@ -170,9 +170,10 @@ def main() -> None:
         for method in DRAW_ORDER:
             x, m, lo, hi = domain_method_stats(method, domain, spec, args.baseline_root, args.ours_root)
             line_alpha = 1.0 if method == "ours" else 0.65
-            ax.plot(x, m, color=COLORS[method], lw=2.8, label=DEFAULT_LABELS[method], alpha=line_alpha)
+            line_width = 3.6 if method == "ours" else 2.8
+            ax.plot(x, m, color=COLORS[method], lw=line_width, label=DEFAULT_LABELS[method], alpha=line_alpha)
             ax.fill_between(x, lo, hi, color=COLORS[method], alpha=0.12, linewidth=0)
-        ax.set_title(f"{domain}\n{len(spec['tasks'])} tasks", fontweight="bold")
+        ax.set_title(f"{domain}\n{len(spec['tasks'])} tasks")
         ax.set_xlim(0, spec["x_max"])
         ax.set_ylim(*spec["y_lim"])
         xt = np.arange(0, spec["x_max"] + 1, 1_000_000)
