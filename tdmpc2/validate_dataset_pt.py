@@ -6,57 +6,11 @@ import torch
 from tensordict import TensorDict
 
 DEFAULT_REPLAY_ROOT = Path('/media/datasets/cheliu21/cxy_worldmodel/replay')
-METAWORLD_TASKS = [
-	"mw-assembly",
-	"mw-basketball",
-	"mw-bin-picking",
-	"mw-box-close",
-	"mw-button-press-topdown-wall",
-	"mw-button-press-topdown",
-	"mw-button-press-wall",
-	"mw-button-press",
-	"mw-coffee-button",
-	"mw-coffee-pull",
-	"mw-coffee-push",
-	"mw-dial-turn",
-	"mw-disassemble",
-	"mw-door-close",
-	"mw-door-lock",
-	"mw-door-open",
-	"mw-door-unlock",
-	"mw-drawer-close",
-	"mw-drawer-open",
-	"mw-faucet-close",
-	"mw-faucet-open",
-	"mw-hammer",
-	"mw-hand-insert",
-	"mw-handle-press-side",
-	"mw-handle-press",
-	"mw-handle-pull-side",
-	"mw-handle-pull",
-	"mw-lever-pull",
-	"mw-peg-insert-side",
-	"mw-peg-unplug-side",
-	"mw-pick-out-of-hole",
-	"mw-pick-place-wall",
-	"mw-pick-place",
-	"mw-plate-slide-back-side",
-	"mw-plate-slide-back",
-	"mw-plate-slide-side",
-	"mw-plate-slide",
-	"mw-push-back",
-	"mw-push-wall",
-	"mw-push",
-	"mw-reach-wall",
-	"mw-reach",
-	"mw-shelf-place",
-	"mw-soccer",
-	"mw-stick-pull",
-	"mw-stick-push",
-	"mw-sweep-into",
-	"mw-sweep",
-	"mw-window-close",
-	"mw-window-open",
+TASKS_TO_VALIDATE = [
+	"dog-run",
+	"dog-walk",
+	"dog-trot",
+	"dog-stand",
 ]
 
 
@@ -171,7 +125,7 @@ def validate_task_file(task: str, replay_root: Path) -> str:
 
 
 def main():
-	parser = argparse.ArgumentParser(description='Validate Meta-World replay `.pt` files and print only failures.')
+	parser = argparse.ArgumentParser(description='Validate replay `.pt` files and print only failures.')
 	parser.add_argument(
 		'--replay-root',
 		type=Path,
@@ -182,7 +136,7 @@ def main():
 	shape_counter = Counter()
 	shape_to_tasks = defaultdict(list)
 	errors = []
-	for task in METAWORLD_TASKS:
+	for task in TASKS_TO_VALIDATE:
 		try:
 			shape_sig = validate_task_file(task, args.replay_root)
 			shape_counter[shape_sig] += 1
