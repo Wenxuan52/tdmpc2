@@ -1,7 +1,62 @@
 import argparse
+from pathlib import Path
 
 import torch
 from tensordict import TensorDict
+
+DEFAULT_REPLAY_ROOT = Path('/media/datasets/cheliu21/cxy_worldmodel/replay')
+METAWORLD_TASKS = [
+	"mw-assembly",
+	"mw-basketball",
+	"mw-bin-picking",
+	"mw-box-close",
+	"mw-button-press-topdown-wall",
+	"mw-button-press-topdown",
+	"mw-button-press-wall",
+	"mw-button-press",
+	"mw-coffee-button",
+	"mw-coffee-pull",
+	"mw-coffee-push",
+	"mw-dial-turn",
+	"mw-disassemble",
+	"mw-door-close",
+	"mw-door-lock",
+	"mw-door-open",
+	"mw-door-unlock",
+	"mw-drawer-close",
+	"mw-drawer-open",
+	"mw-faucet-close",
+	"mw-faucet-open",
+	"mw-hammer",
+	"mw-hand-insert",
+	"mw-handle-press-side",
+	"mw-handle-press",
+	"mw-handle-pull-side",
+	"mw-handle-pull",
+	"mw-lever-pull",
+	"mw-peg-insert-side",
+	"mw-peg-unplug-side",
+	"mw-pick-out-of-hole",
+	"mw-pick-place-wall",
+	"mw-pick-place",
+	"mw-plate-slide-back-side",
+	"mw-plate-slide-back",
+	"mw-plate-slide-side",
+	"mw-plate-slide",
+	"mw-push-back",
+	"mw-push-wall",
+	"mw-push",
+	"mw-reach-wall",
+	"mw-reach",
+	"mw-shelf-place",
+	"mw-soccer",
+	"mw-stick-pull",
+	"mw-stick-push",
+	"mw-sweep-into",
+	"mw-sweep",
+	"mw-window-close",
+	"mw-window-open",
+]
 
 
 def _print_value_stats(name, value):
@@ -70,11 +125,58 @@ def validate_dataset_pt(fp: str):
 	print('=' * 80)
 
 
+def _validate_tensordict(td: TensorDict, task: str):
+	if len(td.batch_size) != 2:
+		raise ValueError(f'{task}: invalid batch_size={td.batch_size}, expected rank-2 [num_episodes, episode_length].')
+	required = {'obs', 'action', 'reward'}
+	missing = sorted(required - set(td.keys()))
+	if missing:
+		raise KeyError(f'{task}: missing required keys {missing}.')
+	if torch.isnan(td['reward'][:, 0]).sum().item() != int(td.batch_size[0]):
+		raise ValueError(f'{task}: reward[:,0] is not NaN for all episodes.')
+	if torch.isnan(td['action'][:, 0]).sum().item() != int(td.batch_size[0]):
+		raise ValueError(f'{task}: action[:,0] is not NaN for all episodes.')
+
+
+def _validate_variable_length_dict(obj: dict, task: str):
+	if not bool(obj.get('variable_length', False)):
+		raise ValueError(f'{task}: dict payload missing variable_length=True marker.')
+	chunks = obj.get('chunks_by_length')
+	if not isinstance(chunks, dict) or not chunks:
+		raise ValueError(f'{task}: invalid or empty chunks_by_length.')
+	for length_str, td in chunks.items():
+		if not isinstance(td, TensorDict):
+			raise TypeError(f'{task}: chunks_by_length[{length_str}] is {type(td)}, expected TensorDict.')
+		_validate_tensordict(td, task)
+
+
+def validate_task_file(task: str, replay_root: Path):
+	fp = replay_root / f'{task}.pt'
+	if not fp.exists():
+		raise FileNotFoundError(f'{task}: missing file {fp}')
+	obj = torch.load(fp, weights_only=False)
+	if isinstance(obj, TensorDict):
+		_validate_tensordict(obj, task)
+	elif isinstance(obj, dict):
+		_validate_variable_length_dict(obj, task)
+	else:
+		raise TypeError(f'{task}: unexpected top-level type {type(obj)}.')
+
+
 def main():
-	parser = argparse.ArgumentParser(description='Validate a TD-MPC2 offline dataset `.pt` file.')
-	parser.add_argument('file', help='Path to the dataset `.pt` file.')
+	parser = argparse.ArgumentParser(description='Validate Meta-World replay `.pt` files and print only failures.')
+	parser.add_argument(
+		'--replay-root',
+		type=Path,
+		default=DEFAULT_REPLAY_ROOT,
+		help='Replay directory containing task-level `.pt` files.',
+	)
 	args = parser.parse_args()
-	validate_dataset_pt(args.file)
+	for task in METAWORLD_TASKS:
+		try:
+			validate_task_file(task, args.replay_root)
+		except Exception as exc:
+			print(f'{task}: {exc}')
 
 
 if __name__ == '__main__':
