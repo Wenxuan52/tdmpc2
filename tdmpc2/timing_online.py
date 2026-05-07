@@ -14,13 +14,22 @@ from pathlib import Path
 from omegaconf import OmegaConf
 
 from common import TASK_SET
-from envs.maniskill import MANISKILL_TASKS
-from envs.myosuite import MYOSUITE_TASKS
 
 DMCONTROL_TASKS = list(TASK_SET['mt30'])
 METAWORLD_TASKS = [task for task in TASK_SET['mt80'] if task.startswith('mw-')]
-MANISKILL2_TASKS = list(MANISKILL_TASKS.keys())
-MYOSUITE_TASKS_LIST = list(MYOSUITE_TASKS.keys())
+MANISKILL2_TASKS = ['lift-cube', 'pick-cube', 'stack-cube', 'pick-ycb', 'turn-faucet']
+MYOSUITE_TASKS_LIST = [
+    'myo-reach',
+    'myo-reach-hard',
+    'myo-pose',
+    'myo-pose-hard',
+    'myo-obj-hold',
+    'myo-obj-hold-hard',
+    'myo-key-turn',
+    'myo-key-turn-hard',
+    'myo-pen-twirl',
+    'myo-pen-twirl-hard',
+]
 DOMAIN_TASKS = {
     'DMControl': DMCONTROL_TASKS,
     'MetaWorld': METAWORLD_TASKS,
