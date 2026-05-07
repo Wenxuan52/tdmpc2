@@ -115,6 +115,12 @@ def main():
     parser.add_argument('--config', default=str(Path(__file__).resolve().with_name('timing.yaml')))
     parser.add_argument('--domain', required=True, choices=list(DOMAIN_TASKS.keys()))
     parser.add_argument('--num_gpus', type=int, default=None)
+    parser.add_argument('--planner_type', choices=['mppi', 'diffusion'], default=None)
+    parser.add_argument('--workers_per_gpu', type=int, default=None)
+    parser.add_argument('--compile', choices=['true', 'false'], default=None)
+    parser.add_argument('--compile_mode', default=None)
+    parser.add_argument('--diffusion_eval_compile', choices=['true', 'false'], default=None)
+    parser.add_argument('--diffusion_eval_compile_mode', default=None)
     parser.add_argument('--save_dir', default='/media/datasets/cheliu21/cxy_worldmodel/profiling/')
     args = parser.parse_args()
 
@@ -122,6 +128,18 @@ def main():
     if args.num_gpus is not None:
         cfg.num_gpus = args.num_gpus
         cfg.gpu_ids = []
+    if args.planner_type is not None:
+        cfg.planner_type = args.planner_type
+    if args.workers_per_gpu is not None:
+        cfg.workers_per_gpu = args.workers_per_gpu
+    if args.compile is not None:
+        cfg.compile = args.compile.lower() == 'true'
+    if args.compile_mode is not None:
+        cfg.compile_mode = args.compile_mode
+    if args.diffusion_eval_compile is not None:
+        cfg.diffusion_eval_compile = args.diffusion_eval_compile.lower() == 'true'
+    if args.diffusion_eval_compile_mode is not None:
+        cfg.diffusion_eval_compile_mode = args.diffusion_eval_compile_mode
     tasks = list(DOMAIN_TASKS[args.domain])
     gpu_ids = _resolve_gpu_ids(cfg)
     workers_per_gpu = int(cfg.get('workers_per_gpu', 3) or 3)
