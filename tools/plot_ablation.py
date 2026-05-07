@@ -47,6 +47,7 @@ def main() -> None:
         ecolor='black',
         capsize=4,
         error_kw={'elinewidth': 1.3, 'capthick': 1.3},
+        alpha=0.55
     )
 
     # Axis styling.
@@ -87,7 +88,7 @@ def main() -> None:
 
     fig.tight_layout()
 
-    out_path = Path('/root/workspace/tdmpc2/figures/ablation.pdf')
+    out_path = Path('/root/workspace/tdmpc2/figures/Ablation.pdf')
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, bbox_inches='tight')
     plt.close(fig)
