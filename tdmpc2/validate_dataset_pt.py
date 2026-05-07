@@ -1,4 +1,3 @@
-import argparse
 from pathlib import Path
 from collections import Counter, defaultdict
 
@@ -6,6 +5,7 @@ import torch
 from tensordict import TensorDict
 
 DEFAULT_REPLAY_ROOT = Path('/media/datasets/cheliu21/cxy_worldmodel/replay')
+DEFAULT_TMP_ROOT = DEFAULT_REPLAY_ROOT / '_tmp'
 TASKS_TO_VALIDATE = [
 	"dog-run",
 	"dog-walk",
@@ -111,34 +111,41 @@ def _validate_variable_length_dict(obj: dict, task: str) -> str:
 	return 'VariableLength{' + '; '.join(sorted(length_sigs)) + '}'
 
 
-def validate_task_file(task: str, replay_root: Path) -> str:
-	fp = replay_root / f'{task}.pt'
-	if not fp.exists():
-		raise FileNotFoundError(f'{task}: missing file {fp}')
-	obj = torch.load(fp, weights_only=False)
-	if isinstance(obj, TensorDict):
-		return _validate_tensordict(obj, task)
-	elif isinstance(obj, dict):
-		return _validate_variable_length_dict(obj, task)
-	else:
-		raise TypeError(f'{task}: unexpected top-level type {type(obj)}.')
+def validate_task_chunks(task: str, tmp_root: Path) -> str:
+	task_dir = tmp_root / task
+	if not task_dir.exists():
+		raise FileNotFoundError(f'{task}: missing task dir {task_dir}')
+	seed_dirs = sorted([p for p in task_dir.iterdir() if p.is_dir() and p.name.startswith('seed_')])
+	if not seed_dirs:
+		raise FileNotFoundError(f'{task}: no seed_* directories in {task_dir}')
+	chunk_files = []
+	for seed_dir in seed_dirs:
+		chunk_files.extend(sorted(seed_dir.glob('chunk_*.pt')))
+	if not chunk_files:
+		raise FileNotFoundError(f'{task}: no chunk_*.pt files found under {task_dir}')
+
+	shape_counter = Counter()
+	for fp in chunk_files:
+		obj = torch.load(fp, weights_only=False)
+		if isinstance(obj, TensorDict):
+			shape_sig = _validate_tensordict(obj, task)
+		elif isinstance(obj, dict):
+			shape_sig = _validate_variable_length_dict(obj, task)
+		else:
+			raise TypeError(f'{task}: {fp} unexpected top-level type {type(obj)}.')
+		shape_counter[shape_sig] += 1
+	if len(shape_counter) != 1:
+		raise ValueError(f'{task}: inconsistent chunk shapes: {dict(shape_counter)}')
+	return next(iter(shape_counter.keys()))
 
 
 def main():
-	parser = argparse.ArgumentParser(description='Validate replay `.pt` files and print only failures.')
-	parser.add_argument(
-		'--replay-root',
-		type=Path,
-		default=DEFAULT_REPLAY_ROOT,
-		help='Replay directory containing task-level `.pt` files.',
-	)
-	args = parser.parse_args()
 	shape_counter = Counter()
 	shape_to_tasks = defaultdict(list)
 	errors = []
 	for task in TASKS_TO_VALIDATE:
 		try:
-			shape_sig = validate_task_file(task, args.replay_root)
+			shape_sig = validate_task_chunks(task, DEFAULT_TMP_ROOT)
 			shape_counter[shape_sig] += 1
 			shape_to_tasks[shape_sig].append(task)
 		except Exception as exc:
