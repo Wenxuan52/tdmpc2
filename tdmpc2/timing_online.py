@@ -60,9 +60,9 @@ def _build_cmd(cfg, task: str, output_root: Path) -> list[str]:
         f'compile_mode={cfg.get("compile_mode", "reduce-overhead")}',
         f'diffusion_eval_compile={str(bool(cfg.get("diffusion_eval_compile", False))).lower()}',
         f'diffusion_eval_compile_mode={cfg.get("diffusion_eval_compile_mode", "reduce-overhead")}',
-        f'timing_output_dir={output_root.as_posix()}',
-        f'warmup_evals={int(cfg.get("warmup_evals", 2))}',
-        f'measure_evals={int(cfg.get("measure_evals", 10))}',
+        f'+timing_output_dir={output_root.as_posix()}',
+        f'+warmup_evals={int(cfg.get("warmup_evals", 2))}',
+        f'+measure_evals={int(cfg.get("measure_evals", 10))}',
         f'steps={int(cfg.get("steps", 20000))}',
     ]
 

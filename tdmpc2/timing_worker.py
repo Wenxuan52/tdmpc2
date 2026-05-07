@@ -41,7 +41,7 @@ def eval_once(env, agent, eval_episodes):
             t += 1
 
 
-@hydra.main(config_name='config', config_path='.')
+@hydra.main(version_base=None, config_name='config', config_path='.')
 def main(cfg):
     assert torch.cuda.is_available()
     cfg = OmegaConf.merge(cfg, OmegaConf.from_cli())
