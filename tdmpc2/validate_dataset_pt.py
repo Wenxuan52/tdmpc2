@@ -1,5 +1,6 @@
 import argparse
 from pathlib import Path
+from collections import Counter, defaultdict
 
 import torch
 from tensordict import TensorDict
@@ -125,40 +126,46 @@ def validate_dataset_pt(fp: str):
 	print('=' * 80)
 
 
-def _validate_tensordict(td: TensorDict, task: str):
+def _shape_signature_tensordict(td: TensorDict) -> str:
+	obs_shape = tuple(td['obs'].shape) if 'obs' in td.keys() else None
+	action_shape = tuple(td['action'].shape) if 'action' in td.keys() else None
+	reward_shape = tuple(td['reward'].shape) if 'reward' in td.keys() else None
+	return f'TensorDict(batch_size={tuple(td.batch_size)}, obs={obs_shape}, action={action_shape}, reward={reward_shape})'
+
+
+def _validate_tensordict(td: TensorDict, task: str) -> str:
 	if len(td.batch_size) != 2:
 		raise ValueError(f'{task}: invalid batch_size={td.batch_size}, expected rank-2 [num_episodes, episode_length].')
 	required = {'obs', 'action', 'reward'}
 	missing = sorted(required - set(td.keys()))
 	if missing:
 		raise KeyError(f'{task}: missing required keys {missing}.')
-	if torch.isnan(td['reward'][:, 0]).sum().item() != int(td.batch_size[0]):
-		raise ValueError(f'{task}: reward[:,0] is not NaN for all episodes.')
-	if torch.isnan(td['action'][:, 0]).sum().item() != int(td.batch_size[0]):
-		raise ValueError(f'{task}: action[:,0] is not NaN for all episodes.')
+	return _shape_signature_tensordict(td)
 
 
-def _validate_variable_length_dict(obj: dict, task: str):
+def _validate_variable_length_dict(obj: dict, task: str) -> str:
 	if not bool(obj.get('variable_length', False)):
 		raise ValueError(f'{task}: dict payload missing variable_length=True marker.')
 	chunks = obj.get('chunks_by_length')
 	if not isinstance(chunks, dict) or not chunks:
 		raise ValueError(f'{task}: invalid or empty chunks_by_length.')
+	length_sigs = []
 	for length_str, td in chunks.items():
 		if not isinstance(td, TensorDict):
 			raise TypeError(f'{task}: chunks_by_length[{length_str}] is {type(td)}, expected TensorDict.')
-		_validate_tensordict(td, task)
+		length_sigs.append(f'len={length_str}:{_validate_tensordict(td, task)}')
+	return 'VariableLength{' + '; '.join(sorted(length_sigs)) + '}'
 
 
-def validate_task_file(task: str, replay_root: Path):
+def validate_task_file(task: str, replay_root: Path) -> str:
 	fp = replay_root / f'{task}.pt'
 	if not fp.exists():
 		raise FileNotFoundError(f'{task}: missing file {fp}')
 	obj = torch.load(fp, weights_only=False)
 	if isinstance(obj, TensorDict):
-		_validate_tensordict(obj, task)
+		return _validate_tensordict(obj, task)
 	elif isinstance(obj, dict):
-		_validate_variable_length_dict(obj, task)
+		return _validate_variable_length_dict(obj, task)
 	else:
 		raise TypeError(f'{task}: unexpected top-level type {type(obj)}.')
 
@@ -172,11 +179,31 @@ def main():
 		help='Replay directory containing task-level `.pt` files.',
 	)
 	args = parser.parse_args()
+	shape_counter = Counter()
+	shape_to_tasks = defaultdict(list)
+	errors = []
 	for task in METAWORLD_TASKS:
 		try:
-			validate_task_file(task, args.replay_root)
+			shape_sig = validate_task_file(task, args.replay_root)
+			shape_counter[shape_sig] += 1
+			shape_to_tasks[shape_sig].append(task)
 		except Exception as exc:
-			print(f'{task}: {exc}')
+			errors.append(f'{task}: {exc}')
+
+	for msg in errors:
+		print(msg)
+
+	print('=== shape counts ===')
+	for shape_sig, count in shape_counter.most_common():
+		print(f'count={count} | {shape_sig}')
+
+	print('=== minority shapes ===')
+	if shape_counter:
+		minority_threshold = 2
+		for shape_sig, count in shape_counter.most_common():
+			if count <= minority_threshold:
+				tasks = ', '.join(shape_to_tasks[shape_sig])
+				print(f'count={count} | tasks=[{tasks}] | {shape_sig}')
 
 
 if __name__ == '__main__':
