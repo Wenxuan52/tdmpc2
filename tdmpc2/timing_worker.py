@@ -6,7 +6,6 @@ from pathlib import Path
 import hydra
 import numpy as np
 import torch
-from omegaconf import OmegaConf
 from tensordict.tensordict import TensorDict
 
 from common.buffer import Buffer
@@ -44,7 +43,6 @@ def eval_once(env, agent, eval_episodes):
 @hydra.main(version_base=None, config_name='config', config_path='.')
 def main(cfg):
     assert torch.cuda.is_available()
-    cfg = OmegaConf.merge(cfg, OmegaConf.from_cli())
     cfg = parse_cfg(cfg)
     set_seed(int(getattr(cfg, 'seed', 1)))
 
