@@ -15,7 +15,47 @@ from omegaconf import OmegaConf
 
 from common import TASK_SET
 
-DMCONTROL_TASKS = list(TASK_SET['mt30'])
+DMCONTROL_TASKS = [
+    'acrobot-swingup',
+    'cartpole-balance',
+    'cartpole-balance-sparse',
+    'cartpole-swingup',
+    'cartpole-swingup-sparse',
+    'cheetah-jump',
+    'cheetah-run',
+    'cheetah-run-back',
+    'cheetah-run-backwards',
+    'cheetah-run-front',
+    'cup-catch',
+    'cup-spin',
+    'dog-run',
+    'dog-trot',
+    'dog-stand',
+    'dog-walk',
+    'finger-spin',
+    'finger-turn-easy',
+    'finger-turn-hard',
+    'fish-swim',
+    'hopper-hop',
+    'hopper-hop-backwards',
+    'hopper-stand',
+    'humanoid-run',
+    'humanoid-stand',
+    'humanoid-walk',
+    'pendulum-spin',
+    'pendulum-swingup',
+    'quadruped-run',
+    'quadruped-walk',
+    'reacher-easy',
+    'reacher-hard',
+    'reacher-three-easy',
+    'reacher-three-hard',
+    'walker-run',
+    'walker-run-backwards',
+    'walker-stand',
+    'walker-walk',
+    'walker-walk-backwards',
+]
 METAWORLD_TASKS = [task for task in TASK_SET['mt80'] if task.startswith('mw-')]
 MANISKILL2_TASKS = ['lift-cube', 'pick-cube', 'stack-cube', 'pick-ycb', 'turn-faucet']
 MYOSUITE_TASKS_LIST = [
@@ -30,11 +70,24 @@ MYOSUITE_TASKS_LIST = [
     'myo-pen-twirl',
     'myo-pen-twirl-hard',
 ]
+VISUAL_DMCONTROL_TASKS = [
+    'acrobot-swingup',
+    'cheetah-run',
+    'finger-spin',
+    'finger-turn-easy',
+    'finger-turn-hard',
+    'quadruped-walk',
+    'reacher-easy',
+    'reacher-hard',
+    'walker-run',
+    'walker-walk',
+]
 DOMAIN_TASKS = {
     'DMControl': DMCONTROL_TASKS,
     'MetaWorld': METAWORLD_TASKS,
     'ManiSkill2': MANISKILL2_TASKS,
     'MyoSuite': MYOSUITE_TASKS_LIST,
+    'VisualRL': VISUAL_DMCONTROL_TASKS,
 }
 
 
@@ -65,6 +118,7 @@ def _build_cmd(cfg, task: str, output_root: Path) -> list[str]:
         'tdmpc2/timing_worker.py',
         f'task={task}',
         f'planner_type={cfg.get("planner_type", "mppi")}',
+        f'obs={cfg.get("obs", "state")}',
         f'compile={str(bool(cfg.get("compile", False))).lower()}',
         f'compile_mode={cfg.get("compile_mode", "reduce-overhead")}',
         f'diffusion_eval_compile={str(bool(cfg.get("diffusion_eval_compile", False))).lower()}',
@@ -124,6 +178,7 @@ def main():
     parser.add_argument('--config', default=str(Path(__file__).resolve().with_name('timing.yaml')))
     parser.add_argument('--domain', required=True, choices=list(DOMAIN_TASKS.keys()))
     parser.add_argument('--num_gpus', type=int, default=None)
+    parser.add_argument('--obs', choices=['state', 'rgb'], default=None)
     parser.add_argument('--planner_type', choices=['mppi', 'diffusion'], default=None)
     parser.add_argument('--workers_per_gpu', type=int, default=None)
     parser.add_argument('--compile', choices=['true', 'false'], default=None)
@@ -141,6 +196,8 @@ def main():
         cfg.planner_type = args.planner_type
     if args.workers_per_gpu is not None:
         cfg.workers_per_gpu = args.workers_per_gpu
+    if args.obs is not None:
+        cfg.obs = args.obs
     if args.compile is not None:
         cfg.compile = args.compile.lower() == 'true'
     if args.compile_mode is not None:
