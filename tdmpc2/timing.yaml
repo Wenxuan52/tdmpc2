@@ -1,0 +1,16 @@
+num_gpus: 1
+gpu_ids: []
+workers_per_gpu: 3
+planner_type: diffusion
+compile: true
+compile_mode: max-autotune-no-cudagraphs
+diffusion_eval_compile: true
+diffusion_eval_compile_mode: reduce-overhead
+contrastive_beta: 0.1
+
+warmup_evals: 2
+measure_evals: 10
+train_steps_per_iter: 1000
+steps: 20000
+eval_episodes: 10
+obs: state
