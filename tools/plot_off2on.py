@@ -9,8 +9,11 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
+
+from plot_config import load_plot_config
 
 
 TASK_ORDER: List[Tuple[str, str]] = [
@@ -27,8 +30,9 @@ TASK_ORDER: List[Tuple[str, str]] = [
 ]
 DMCONTROL_TASKS = {"cheetah-run", "hopper-hop", "pendulum-swingup", "reacher-hard", "walker-run"}
 
+PLOT_CFG = load_plot_config()
 FINETUNED_COLOR = "#d62728"  # red
-SCRATCH_COLOR = "#9e9e9e"    # gray
+SCRATCH_COLOR = str(PLOT_CFG["off2on_scratch_color"])
 DEFAULT_SCRATCH_SEEDS = [1, 2, 3]
 DEFAULT_FINETUNE_SEEDS = [4, 5, 6]
 OUT_PATH = Path("figures/off2on_compare.pdf")
@@ -296,7 +300,7 @@ def plot(args: argparse.Namespace) -> None:
 
         # Match transparency style with tools/plot_DMcontrol.py
         ft_mean_alpha, ft_ci_alpha, ft_fill_alpha = 1.0, 0.55, 0.22
-        sc_mean_alpha, sc_ci_alpha, sc_fill_alpha = 0.55, 0.25, 0.15
+        sc_mean_alpha, sc_ci_alpha, sc_fill_alpha = 0.55, float(PLOT_CFG["ci_alpha"]), 0.15
 
         ft_upper, ft_lower = ft_mean + ft_ci, ft_mean - ft_ci
 
@@ -310,12 +314,18 @@ def plot(args: argparse.Namespace) -> None:
         ax.fill_between(step_grid, ft_lower, ft_upper, color=FINETUNED_COLOR, alpha=ft_fill_alpha, linewidth=0)
 
         if idx == 0:
-            legend_handles = [line_ft] if line_sc is None else [line_sc, line_ft]
+            if line_sc is None:
+                legend_handles = [Line2D([], [], color=FINETUNED_COLOR, linewidth=float(PLOT_CFG["legend_method_linewidth"]), alpha=ft_mean_alpha)]
+            else:
+                legend_handles = [
+                    Line2D([], [], color=SCRATCH_COLOR, linewidth=float(PLOT_CFG["legend_method_linewidth"]), alpha=sc_mean_alpha),
+                    Line2D([], [], color=FINETUNED_COLOR, linewidth=float(PLOT_CFG["legend_method_linewidth"]), alpha=ft_mean_alpha),
+                ]
 
-        ax.set_title(title, fontsize=16)
+        ax.set_title(title, fontsize=int(PLOT_CFG["title_fontsize"]))
         ax.set_xlim(-10, args.max_step + 10)
         ax.set_ylim(-5.0, 105.0)
-        ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
+        ax.set_facecolor(str(PLOT_CFG["off2on_bg_color"])); ax.grid(True, linestyle="-", color=str(PLOT_CFG["off2on_grid_color"]), linewidth=0.8, alpha=0.55)
         ax.set_yticks([0, 50, 100])
 
         row, col = divmod(idx, 5)
@@ -326,7 +336,7 @@ def plot(args: argparse.Namespace) -> None:
         else:
             ax.set_xticklabels([])
 
-        ax.tick_params(axis="y", labelsize=11)
+        ax.tick_params(axis="y", labelsize=int(PLOT_CFG["ytick_labelsize"]))
 
     legend_labels = ["Finetuned"] if not args.plot_scratch else ["From scratch", "Finetuned"]
     fig.legend(
@@ -336,7 +346,7 @@ def plot(args: argparse.Namespace) -> None:
         bbox_to_anchor=(0.5, -0.02),
         ncol=len(legend_labels),
         frameon=False,
-        fontsize=16,
+        fontsize=int(PLOT_CFG["legend_fontsize"]),
     )
 
     fig.subplots_adjust(left=0.06, right=0.995, top=0.93, bottom=0.18, wspace=0.15, hspace=0.38)
