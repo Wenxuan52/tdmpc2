@@ -9,3 +9,7 @@ legend_y_tight: 0.05
 off2on_bg_color: "#ffffff"
 off2on_grid_color: "#dddddd"
 off2on_scratch_color: "#7a7a7a"
+dm_meta_title_fontsize: 26
+dm_meta_xtick_labelsize: 20
+dm_meta_ytick_labelsize: 20
+dm_meta_legend_y: 0.02
