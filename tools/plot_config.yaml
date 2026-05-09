@@ -1,0 +1,11 @@
+legend_fontsize: 26
+legend_linewidth: 5.0
+ci_alpha: 0.35
+xtick_labelsize: 28
+ytick_labelsize: 28
+title_fontsize: 30
+legend_y_default: 0.035
+legend_y_tight: 0.05
+off2on_bg_color: "#ffffff"
+off2on_grid_color: "#dddddd"
+off2on_scratch_color: "#7a7a7a"

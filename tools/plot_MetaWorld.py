@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from plot_config import load_plot_config
+
 from handle_metaworld_multi_log import load_task_seed_logs
 
 METAWORLD_TASKS: List[str] = [
@@ -95,6 +97,7 @@ X_MAX = 2_000_000
 Y_MIN, Y_MAX = -3.0, 103.0
 GRID_STEP = 100_000
 EXPECTED_SEEDS = [1, 2, 3]
+PLOT_CFG = load_plot_config()
 FINAL_CSV_DIR = Path("/media/datasets/cheliu21/cxy_worldmodel/final_csv")
 DEFAULT_OURS_SOURCE = "log"
 
@@ -401,10 +404,10 @@ def plot_all(args: argparse.Namespace) -> None:
             lower = mean - ci
             color = COLORS[method]
             mean_alpha = 1.0 if method == "ours" else 0.55
-            ci_alpha = 0.30 if method == "ours" else 0.25
+            ci_alpha = float(PLOT_CFG["ci_alpha"])
             fill_alpha = 0.18 if method == "ours" else 0.15
 
-            line_width = 4 if method == "ours" else 2
+            line_width = float(PLOT_CFG["legend_linewidth"])
             line, = ax.plot(step_grid, mean, color=color, linewidth=line_width, alpha=mean_alpha)
             ax.plot(step_grid, upper, color=color, linewidth=1.0, alpha=ci_alpha)
             ax.plot(step_grid, lower, color=color, linewidth=1.0, alpha=ci_alpha)
@@ -416,7 +419,7 @@ def plot_all(args: argparse.Namespace) -> None:
             if idx == 0:
                 legend_handles.append(line)
 
-        ax.set_title(prettify_task_name(task), fontsize=26)
+        ax.set_title(prettify_task_name(task), fontsize=int(PLOT_CFG["title_fontsize"]))
         ax.set_xlim(-1000, X_MAX)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
@@ -427,12 +430,12 @@ def plot_all(args: argparse.Namespace) -> None:
 
         if row == 9:
             ax.set_xticklabels(["0", "1M", "2M"])
-            ax.tick_params(axis="x", labelsize=20, labelbottom=True)
+            ax.tick_params(axis="x", labelsize=int(PLOT_CFG["xtick_labelsize"]), labelbottom=True)
         else:
             ax.tick_params(axis="x", labelbottom=False)
 
         if col == 0:
-            ax.tick_params(axis="y", labelsize=20, labelleft=True)
+            ax.tick_params(axis="y", labelsize=int(PLOT_CFG["ytick_labelsize"]), labelleft=True)
         else:
             ax.tick_params(axis="y", labelleft=False)
 
@@ -440,10 +443,10 @@ def plot_all(args: argparse.Namespace) -> None:
         legend_handles,
         [labels[m] for m in METHODS],
         loc="lower center",
-        bbox_to_anchor=(0.5, 0.03),
+        bbox_to_anchor=(0.5, float(PLOT_CFG["legend_y_default"])),
         ncol=5,
         frameon=False,
-        fontsize=20,
+        fontsize=int(PLOT_CFG["legend_fontsize"]),
     )
 
     fig.subplots_adjust(left=0.06, right=0.995, top=0.98, bottom=0.07, wspace=0.15, hspace=0.4)
