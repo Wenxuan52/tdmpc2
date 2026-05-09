@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from plot_config import load_plot_config
+
 from handle_metaworld_multi_log import load_task_seed_logs
 
 MANISKILL_TASKS: List[str] = [
@@ -50,6 +52,7 @@ X_MAX = 4_000_000
 Y_MIN, Y_MAX = -3.0, 103.0
 GRID_STEP = 100_000
 EXPECTED_SEEDS = [1, 2, 3]
+PLOT_CFG = load_plot_config()
 FINAL_CSV_DIR = Path("/media/datasets/cheliu21/cxy_worldmodel/final_csv")
 DEFAULT_OURS_SOURCE = "log"
 TASK_MAX_STEP = {
@@ -353,10 +356,10 @@ def plot_all(args: argparse.Namespace) -> None:
             lower = mean - ci
             color = COLORS[method]
             mean_alpha = 1.0 if method == "ours" else 0.55
-            ci_alpha = 0.30 if method == "ours" else 0.25
+            ci_alpha = float(PLOT_CFG["ci_alpha"])
             fill_alpha = 0.18 if method == "ours" else 0.15
 
-            line_width = 4 if method == "ours" else 2
+            line_width = float(PLOT_CFG["legend_linewidth"])
             line, = ax.plot(step_grid, mean, color=color, linewidth=line_width, alpha=mean_alpha)
             ax.plot(step_grid, upper, color=color, linewidth=1.0, alpha=ci_alpha)
             ax.plot(step_grid, lower, color=color, linewidth=1.0, alpha=ci_alpha)
@@ -368,18 +371,18 @@ def plot_all(args: argparse.Namespace) -> None:
             if idx == 0:
                 legend_handles.append(line)
 
-        ax.set_title(prettify_task_name(task), fontsize=16)
+        ax.set_title(prettify_task_name(task), fontsize=int(PLOT_CFG["title_fontsize"]))
         ax.set_xlim(-1000, X_MAX)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
 
         ax.set_xticks([0, 2_000_000, 4_000_000])
         ax.set_xticklabels(["0", "2M", "4M"])
-        ax.tick_params(axis="x", labelsize=12, labelbottom=True)
+        ax.tick_params(axis="x", labelsize=int(PLOT_CFG["xtick_labelsize"]), labelbottom=True)
 
         ax.set_yticks([0, 50, 100])
         if idx == 0:
-            ax.tick_params(axis="y", labelsize=12, labelleft=True)
+            ax.tick_params(axis="y", labelsize=int(PLOT_CFG["ytick_labelsize"]), labelleft=True)
         else:
             ax.tick_params(axis="y", labelleft=False)
 
