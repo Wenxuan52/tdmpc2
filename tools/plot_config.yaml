@@ -17,3 +17,7 @@ dm_meta_legend_y: 0.02
 subplot_ours_linewidth: 4.0
 subplot_baseline_linewidth: 2.0
 legend_method_linewidth: 5.0
+
+off2on_xtick_labelsize: 11
+off2on_title_fontsize: 16
+off2on_legend_fontsize: 16

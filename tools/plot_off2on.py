@@ -67,7 +67,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--plot-scratch",
         action="store_true",
-        help="Whether to plot from-scratch(no_load) curves. Default: only finetuned.",
+        default=True,
+        help="Whether to plot from-scratch(no_load) curves. Default: enabled.",
     )
     parser.add_argument(
         "--seed-config",
@@ -322,7 +323,7 @@ def plot(args: argparse.Namespace) -> None:
                     Line2D([], [], color=FINETUNED_COLOR, linewidth=float(PLOT_CFG["legend_method_linewidth"]), alpha=ft_mean_alpha),
                 ]
 
-        ax.set_title(title, fontsize=int(PLOT_CFG["title_fontsize"]))
+        ax.set_title(title, fontsize=int(PLOT_CFG["off2on_title_fontsize"]))
         ax.set_xlim(-10, args.max_step + 10)
         ax.set_ylim(-5.0, 105.0)
         ax.set_facecolor(str(PLOT_CFG["off2on_bg_color"])); ax.grid(True, linestyle="-", color=str(PLOT_CFG["off2on_grid_color"]), linewidth=0.8, alpha=0.55)
@@ -332,9 +333,10 @@ def plot(args: argparse.Namespace) -> None:
         if row == 1:
             xticks = [0, args.max_step // 2, args.max_step]
             ax.set_xticks(xticks)
-            ax.set_xticklabels(["0", f"{args.max_step//2000}k", f"{args.max_step//1000}k"], fontsize=11)
+            ax.set_xticklabels(["0", f"{args.max_step//2000}k", f"{args.max_step//1000}k"])
+            ax.tick_params(axis="x", labelsize=int(PLOT_CFG["off2on_xtick_labelsize"]), labelbottom=True)
         else:
-            ax.set_xticklabels([])
+            ax.tick_params(axis="x", labelbottom=False)
 
         ax.tick_params(axis="y", labelsize=int(PLOT_CFG["ytick_labelsize"]))
 
@@ -349,7 +351,7 @@ def plot(args: argparse.Namespace) -> None:
         bbox_to_anchor=(0.5, -0.02),
         ncol=len(legend_labels),
         frameon=False,
-        fontsize=int(PLOT_CFG["legend_fontsize"]),
+        fontsize=int(PLOT_CFG["off2on_legend_fontsize"]),
     )
 
     fig.subplots_adjust(left=0.06, right=0.995, top=0.93, bottom=0.18, wspace=0.15, hspace=0.38)
