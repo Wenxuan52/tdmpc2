@@ -338,7 +338,7 @@ def plot(args: argparse.Namespace) -> None:
         else:
             ax.tick_params(axis="x", labelbottom=False)
 
-        ax.tick_params(axis="y", labelsize=int(PLOT_CFG["ytick_labelsize"]))
+        ax.tick_params(axis="y", labelsize=int(PLOT_CFG["off2on_ytick_labelsize"]))
 
     legend_labels = ["Finetuned"] if not args.plot_scratch else ["From scratch", "Finetuned"]
     for _h in legend_handles:
