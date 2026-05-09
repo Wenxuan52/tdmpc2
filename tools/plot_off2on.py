@@ -329,6 +329,11 @@ def plot(args: argparse.Namespace) -> None:
         ax.set_facecolor(str(PLOT_CFG["off2on_bg_color"])); ax.grid(True, linestyle="-", color=str(PLOT_CFG["off2on_grid_color"]), linewidth=0.8, alpha=0.55)
         ax.set_yticks([0, 50, 100])
 
+        for spine in ax.spines.values():
+            spine.set_visible(True)
+            spine.set_color("black")
+            spine.set_linewidth(1.0)
+
         row, col = divmod(idx, 5)
         if row == 1:
             xticks = [0, args.max_step // 2, args.max_step]
