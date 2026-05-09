@@ -332,6 +332,9 @@ def plot(args: argparse.Namespace) -> None:
         ax.tick_params(axis="y", labelsize=int(PLOT_CFG["ytick_labelsize"]))
 
     legend_labels = ["Finetuned"] if not args.plot_scratch else ["From scratch", "Finetuned"]
+    for _h in legend_handles:
+        _h.set_linewidth(float(PLOT_CFG["legend_method_linewidth"]))
+
     fig.legend(
         legend_handles,
         legend_labels,

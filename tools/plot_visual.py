@@ -34,7 +34,7 @@ COLORS = {
 }
 
 DEFAULT_LABELS = {
-    "ours": "Ours",
+    "ours": "MBDPO",
     "tdmpc2": "TD-MPC2",
 }
 
@@ -288,7 +288,7 @@ def plot_all(args: argparse.Namespace) -> None:
             mean_alpha = 1.0 if method == "ours" else 0.55
             ci_alpha = float(PLOT_CFG["ci_alpha"])
             fill_alpha = 0.18 if method == "ours" else 0.15
-            line_width = float(PLOT_CFG["legend_linewidth"])
+            line_width = float(PLOT_CFG["subplot_ours_linewidth"]) if method == "ours" else float(PLOT_CFG["subplot_baseline_linewidth"])
 
             (line,) = ax.plot(step_grid, mean, color=color, linewidth=line_width, alpha=mean_alpha)
             ax.plot(step_grid, upper, color=color, linewidth=1.0, alpha=ci_alpha)
@@ -320,6 +320,9 @@ def plot_all(args: argparse.Namespace) -> None:
             ax.tick_params(axis="y", labelsize=int(PLOT_CFG["ytick_labelsize"]), labelleft=True)
         else:
             ax.tick_params(axis="y", labelleft=False)
+
+    for _h in legend_handles:
+        _h.set_linewidth(float(PLOT_CFG["legend_method_linewidth"]))
 
     fig.legend(
         legend_handles,

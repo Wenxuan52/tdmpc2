@@ -13,3 +13,7 @@ dm_meta_title_fontsize: 26
 dm_meta_xtick_labelsize: 20
 dm_meta_ytick_labelsize: 20
 dm_meta_legend_y: 0.02
+
+subplot_ours_linewidth: 4.0
+subplot_baseline_linewidth: 2.0
+legend_method_linewidth: 5.0

@@ -75,7 +75,7 @@ COLORS = {
 }
 
 DEFAULT_LABELS = {
-    "ours": "Ours",
+    "ours": "MBDPO",
     "tdmpc2": "TD-MPC2",
     "tdmpc": "TD-MPC",
     "dreamerv3": "DreamerV3",
@@ -108,7 +108,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ours-legend",
         type=str,
-        default="Ours",
+        default="MBDPO",
         help="Legend label for the improved TD-MPC2 baseline.",
     )
     parser.add_argument(
@@ -304,7 +304,7 @@ def plot_all(args: argparse.Namespace) -> None:
             ci_alpha = float(PLOT_CFG["ci_alpha"])
             fill_alpha = 0.18 if method == "ours" else 0.15
 
-            line_width = float(PLOT_CFG["legend_linewidth"])
+            line_width = float(PLOT_CFG["subplot_ours_linewidth"]) if method == "ours" else float(PLOT_CFG["subplot_baseline_linewidth"])
             line, = ax.plot(step_grid, mean, color=color, linewidth=line_width, alpha=mean_alpha)
             ax.plot(step_grid, upper, color=color, linewidth=1.0, alpha=ci_alpha)
             ax.plot(step_grid, lower, color=color, linewidth=1.0, alpha=ci_alpha)
@@ -338,6 +338,9 @@ def plot_all(args: argparse.Namespace) -> None:
 
     # 8x5 grid has one extra subplot (40th). Hide it.
     axes[-1].axis("off")
+
+    for _h in legend_handles:
+        _h.set_linewidth(float(PLOT_CFG["legend_method_linewidth"]))
 
     fig.legend(
         legend_handles,
