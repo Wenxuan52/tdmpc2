@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 
@@ -313,7 +314,13 @@ def plot(args: argparse.Namespace) -> None:
         ax.fill_between(step_grid, ft_lower, ft_upper, color=FINETUNED_COLOR, alpha=ft_fill_alpha, linewidth=0)
 
         if idx == 0:
-            legend_handles = [line_ft] if line_sc is None else [line_sc, line_ft]
+            if line_sc is None:
+                legend_handles = [Line2D([], [], color=FINETUNED_COLOR, linewidth=float(PLOT_CFG["legend_method_linewidth"]), alpha=ft_mean_alpha)]
+            else:
+                legend_handles = [
+                    Line2D([], [], color=SCRATCH_COLOR, linewidth=float(PLOT_CFG["legend_method_linewidth"]), alpha=sc_mean_alpha),
+                    Line2D([], [], color=FINETUNED_COLOR, linewidth=float(PLOT_CFG["legend_method_linewidth"]), alpha=ft_mean_alpha),
+                ]
 
         ax.set_title(title, fontsize=int(PLOT_CFG["title_fontsize"]))
         ax.set_xlim(-10, args.max_step + 10)

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
 
@@ -369,7 +370,7 @@ def plot_all(args: argparse.Namespace) -> None:
                 export_task_final_csv(task, df, seed_list, X_MAX)
 
             if idx == 0:
-                legend_handles.append(line)
+                legend_handles.append(Line2D([], [], color=color, linewidth=float(PLOT_CFG["legend_method_linewidth"]), alpha=mean_alpha))
 
         ax.set_title(prettify_task_name(task), fontsize=int(PLOT_CFG["title_fontsize"]))
         ax.set_xlim(-1000, X_MAX)
