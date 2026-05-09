@@ -88,6 +88,7 @@ GRID_STEP = 100_000
 EXPECTED_SEEDS = [1, 2, 3]
 PLOT_CFG = load_plot_config()
 FINAL_CSV_DIR = Path("/media/datasets/cheliu21/cxy_worldmodel/final_csv")
+PLOT_CFG = load_plot_config()
 
 
 def parse_args() -> argparse.Namespace:
