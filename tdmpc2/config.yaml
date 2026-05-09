@@ -68,7 +68,7 @@ horizon: 3
 min_std: 0.05
 max_std: 2
 temperature: 0.5
-diffusion_steps: 20
+diffusion_steps: 5
 diffusion_beta0: 1e-4
 diffusion_betaT: 1e-2
 diffusion_num_samples: 512

@@ -1,6 +1,6 @@
 num_gpus: 1
 gpu_ids: []
-workers_per_gpu: 3
+workers_per_gpu: 1
 planner_type: diffusion
 compile: true
 compile_mode: max-autotune-no-cudagraphs
