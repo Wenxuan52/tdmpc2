@@ -9,8 +9,11 @@ from pathlib import Path
 from typing import Dict, List
 
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
+
+from plot_config import load_plot_config
 
 from handle_multi_csv import load_task_seed_csvs
 
@@ -41,7 +44,7 @@ COLORS = {
 }
 
 DEFAULT_LABELS = {
-    "ours": "Ours",
+    "ours": "MBDPO",
     "tdmpc2": "TD-MPC2",
     "tdmpc": "TD-MPC",
     "dreamerv3": "DreamerV3",
@@ -52,6 +55,7 @@ X_MAX = 14_000_000
 GRID_STEP = 100_000
 Y_MIN, Y_MAX = -20, 1020
 EXPECTED_SEEDS = [1, 2, 3]
+PLOT_CFG = load_plot_config()
 
 
 def parse_args() -> argparse.Namespace:
@@ -71,7 +75,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--ours-legend",
         type=str,
-        default="Ours",
+        default="MBDPO",
         help="Legend label for Ours method.",
     )
     parser.add_argument(
@@ -232,9 +236,9 @@ def plot_all(args: argparse.Namespace) -> None:
 
             color = COLORS[method]
             mean_alpha = 1.0 if method == "ours" else 0.55
-            ci_alpha = 0.30 if method == "ours" else 0.25
+            ci_alpha = float(PLOT_CFG["ci_alpha"])
             fill_alpha = 0.18 if method == "ours" else 0.15
-            line_width = 4.0 if method == "ours" else 2.0
+            line_width = float(PLOT_CFG["subplot_ours_linewidth"]) if method == "ours" else float(PLOT_CFG["subplot_baseline_linewidth"])
 
             (line,) = ax.plot(step_grid, mean, color=color, linewidth=line_width, alpha=mean_alpha)
             ax.plot(step_grid, upper, color=color, linewidth=1.0, alpha=ci_alpha)
@@ -242,9 +246,9 @@ def plot_all(args: argparse.Namespace) -> None:
             ax.fill_between(step_grid, lower, upper, color=color, alpha=fill_alpha, linewidth=0)
 
             if idx == 0:
-                legend_handles.append(line)
+                legend_handles.append(Line2D([], [], color=color, linewidth=float(PLOT_CFG["legend_method_linewidth"]), alpha=mean_alpha))
 
-        ax.set_title(prettify_task_name(task), fontsize=30)
+        ax.set_title(prettify_task_name(task), fontsize=int(PLOT_CFG["title_fontsize"]))
         ax.set_xlim(-100_000, X_MAX)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
@@ -255,12 +259,12 @@ def plot_all(args: argparse.Namespace) -> None:
 
         if row == 1:
             ax.set_xticklabels(["0", "4M", "8M", "12M"])
-            ax.tick_params(axis="x", labelsize=28, labelbottom=True)
+            ax.tick_params(axis="x", labelsize=int(PLOT_CFG["xtick_labelsize"]), labelbottom=True)
         else:
             ax.tick_params(axis="x", labelbottom=False)
 
         if col == 0:
-            ax.tick_params(axis="y", labelsize=28, labelleft=True)
+            ax.tick_params(axis="y", labelsize=int(PLOT_CFG["ytick_labelsize"]), labelleft=True)
         else:
             ax.tick_params(axis="y", labelleft=False)
 
