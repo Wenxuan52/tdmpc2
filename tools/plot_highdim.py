@@ -271,6 +271,9 @@ def plot_all(args: argparse.Namespace) -> None:
     for idx in range(len(TASKS), len(axes)):
         axes[idx].axis("off")
 
+    for _h in legend_handles:
+        _h.set_linewidth(float(PLOT_CFG["legend_method_linewidth"]))
+
     fig.legend(
         legend_handles,
         [labels[m] for m in METHODS],
