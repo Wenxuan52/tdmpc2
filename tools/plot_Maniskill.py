@@ -394,10 +394,10 @@ def plot_all(args: argparse.Namespace) -> None:
         legend_handles,
         [labels[m] for m in METHODS],
         loc="lower center",
-        bbox_to_anchor=(0.5, -0.03),
+        bbox_to_anchor=(0.5, -0.08),
         ncol=5,
         frameon=False,
-        fontsize=12,
+        fontsize=float(PLOT_CFG["legend_fontsize"]),
     )
 
     fig.subplots_adjust(left=0.05, right=0.995, top=0.84, bottom=0.22, wspace=0.16)
