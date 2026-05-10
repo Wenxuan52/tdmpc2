@@ -81,6 +81,8 @@ OVERALL_PLOT_CFG = {
     "subplot_baseline_linewidth": 2.0,
     "legend_method_linewidth": 4.0,
     "legend_y": -0.16,
+    "domain_title_y": 1.24,
+    "task_subtitle_y": 1.03,
 }
 TASK_ALIASES = {
     # Keep backward compatibility with previously used task names.
@@ -217,7 +219,7 @@ def main() -> None:
             ax.fill_between(x, lo, hi, color=COLORS[method], alpha=0.12, linewidth=0)
         # Two-line title: bold domain name, normal task count
         ax.text(
-            0.5, 1.2, domain,
+            0.5, float(OVERALL_PLOT_CFG["domain_title_y"]), domain,
             transform=ax.transAxes,
             ha="center",
             va="bottom",
@@ -226,7 +228,7 @@ def main() -> None:
         )
 
         ax.text(
-            0.5, 1.055, f"{len(spec['tasks'])} tasks",
+            0.5, float(OVERALL_PLOT_CFG["task_subtitle_y"]), f"{len(spec['tasks'])} tasks",
             transform=ax.transAxes,
             ha="center",
             va="bottom",
