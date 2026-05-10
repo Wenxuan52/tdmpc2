@@ -72,16 +72,16 @@ DOMAIN_SPECS = {
 SEEDS = [1, 2, 3]
 GRID_STEP = 100_000
 OVERALL_PLOT_CFG = {
-    "title_fontsize": 18,
-    "subtitle_fontsize": 15,
-    "legend_fontsize": 16,
-    "xtick_labelsize": 14,
-    "ytick_labelsize": 14,
-    "subplot_ours_linewidth": 3.2,
+    "title_fontsize": 20,
+    "subtitle_fontsize": 19,
+    "legend_fontsize": 18,
+    "xtick_labelsize": 18,
+    "ytick_labelsize": 18,
+    "subplot_ours_linewidth": 4.0,
     "subplot_baseline_linewidth": 2.0,
-    "legend_method_linewidth": 4.0,
-    "legend_y": -0.16,
-    "domain_title_y": 1.24,
+    "legend_method_linewidth": 5.0,
+    "legend_y": 0.04,
+    "domain_title_y": 1.16,
     "task_subtitle_y": 1.03,
 }
 TASK_ALIASES = {
@@ -208,7 +208,7 @@ def main() -> None:
             "legend.fontsize": int(OVERALL_PLOT_CFG["legend_fontsize"]),
         }
     )
-    fig, axes = plt.subplots(1, len(DOMAIN_SPECS), figsize=(20, 4), dpi=200)
+    fig, axes = plt.subplots(1, len(DOMAIN_SPECS), figsize=(20.5, 4.5), dpi=200)
     for ax, (domain, spec) in zip(axes, DOMAIN_SPECS.items()):
         methods = spec.get("methods", DRAW_ORDER)
         for method in methods:
@@ -250,6 +250,7 @@ def main() -> None:
     labels = [DEFAULT_LABELS[m] for m in DRAW_ORDER]
     fig.legend(handles, labels, loc="lower center", ncol=5, frameon=False, bbox_to_anchor=(0.5, float(OVERALL_PLOT_CFG["legend_y"])))
     plt.tight_layout(rect=[0, 0.18, 1, 1])
+    fig.subplots_adjust(wspace=0.27)
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, bbox_inches="tight")
     print(f"saved: {args.out}")
