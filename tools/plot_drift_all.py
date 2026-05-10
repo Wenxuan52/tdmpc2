@@ -17,9 +17,9 @@ SEED_CONFIG = Path("tools/diff/all_seed.yaml")
 DRIFT_BOXPLOT_YLIM = (-0.71, 0.91)
 
 # ===== Easy-to-tune plotting knobs =====
-AXIS_TICK_FONT_SIZE = 19
-BOTTOM_LEGEND_FONT_SIZE = 20
-BOTTOM_LEGEND_Y = -0.01  # distance between bottom legend and upper subplots
+AXIS_TICK_FONT_SIZE = 21
+BOTTOM_LEGEND_FONT_SIZE = 22
+BOTTOM_LEGEND_Y = -0.036  # distance between bottom legend and upper subplots
 
 EPS = 1e-8
 POLICY_DENOM_FLOOR = 1e-3

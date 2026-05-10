@@ -33,15 +33,15 @@ ALL_TASKS = [t for row in TASK_GRID for t in row]
 
 
 # ===== Easy-to-tune plotting knobs =====
-X_TICK_FONT_SIZE = 15
-Y_TICK_FONT_SIZE = 15
+X_TICK_FONT_SIZE = 17
+Y_TICK_FONT_SIZE = 17
 X_LABEL_FONT_SIZE = 18
-Y_LABEL_FONT_SIZE = 18
-SUBPLOT_TITLE_FONT_SIZE = 20
-LEGEND_FONT_SIZE = 16
-LEGEND_Y = 0.005  # distance between legend and subplots
-POLICY_LINE_WIDTH = 2.0
-METHOD_LINE_WIDTH = 3.5
+Y_LABEL_FONT_SIZE = 20
+SUBPLOT_TITLE_FONT_SIZE = 22
+LEGEND_FONT_SIZE = 20
+LEGEND_Y = -0.01  # distance between legend and subplots
+POLICY_LINE_WIDTH = 1.5
+METHOD_LINE_WIDTH = 2.5
 LEGEND_LINE_WIDTH = 5.0
 
 # Typography one-stop interface
