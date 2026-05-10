@@ -137,13 +137,22 @@ def _ema(values: np.ndarray, alpha: float = EMA_ALPHA) -> np.ndarray:
 
 
 def _mean_se(curves: List[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
-    arr = np.vstack(curves)
-    n = np.sum(np.isfinite(arr), axis=0)
-    mean = np.nanmean(arr, axis=0)
+    arr = np.vstack(curves).astype(float)
+    finite = np.isfinite(arr)
+    n = np.sum(finite, axis=0)
+
+    mean = np.full(arr.shape[1], np.nan, dtype=float)
+    valid_mean = n > 0
+    if np.any(valid_mean):
+        sums = np.where(finite, arr, 0.0).sum(axis=0)
+        mean[valid_mean] = sums[valid_mean] / n[valid_mean]
+
     se = np.full_like(mean, np.nan)
-    valid = n >= 2
-    if np.any(valid):
-        se[valid] = np.nanstd(arr[:, valid], axis=0, ddof=1) / np.sqrt(n[valid])
+    valid_se = n >= 2
+    if np.any(valid_se):
+        centered = np.where(finite, arr - mean[None, :], 0.0)
+        var = np.where(valid_se, (centered ** 2).sum(axis=0) / (n - 1), np.nan)
+        se[valid_se] = np.sqrt(var[valid_se]) / np.sqrt(n[valid_se])
     return mean, se
 
 
@@ -239,7 +248,12 @@ def main() -> None:
         handles, labels = axes[0, 0].get_legend_handles_labels()
         if handles:
             leg = fig.legend(handles, labels, ncol=2, loc="lower center", bbox_to_anchor=(0.5, LEGEND_Y), fontsize=LEGEND_FONT_SIZE, frameon=False)
-            for h in leg.legendHandles:
+            legend_handles = getattr(leg, "legendHandles", None)
+            if legend_handles is None:
+                legend_handles = getattr(leg, "legend_handles", None)
+            if legend_handles is None:
+                legend_handles = leg.get_lines()
+            for h in legend_handles:
                 h.set_linewidth(LEGEND_LINE_WIDTH)
 
         fig.tight_layout(rect=[0.02, 0.06, 0.98, 0.99])
