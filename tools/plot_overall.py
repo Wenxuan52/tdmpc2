@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 import numpy as np
 import pandas as pd
+from plot_config import load_plot_config
 
 METHODS = ["ours", "tdmpc2", "tdmpc", "dreamerv3", "sac"]
 DRAW_ORDER = ["tdmpc2", "tdmpc", "dreamerv3", "sac", "ours"]
