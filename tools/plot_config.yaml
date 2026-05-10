@@ -1,9 +1,9 @@
-legend_fontsize: 26
+legend_fontsize: 24
 legend_linewidth: 5.0
 ci_alpha: 0.35
-xtick_labelsize: 28
-ytick_labelsize: 28
-title_fontsize: 30
+xtick_labelsize: 24
+ytick_labelsize: 24
+title_fontsize: 26
 legend_y_default: 0.035
 legend_y_tight: 0.05
 off2on_bg_color: "#ffffff"
@@ -18,7 +18,7 @@ subplot_ours_linewidth: 4.0
 subplot_baseline_linewidth: 2.0
 legend_method_linewidth: 5.0
 
-off2on_xtick_labelsize: 16
-off2on_title_fontsize: 16
-off2on_legend_fontsize: 16
-off2on_ytick_labelsize: 16
+off2on_xtick_labelsize: 18
+off2on_ytick_labelsize: 18
+off2on_title_fontsize: 20
+off2on_legend_fontsize: 18
