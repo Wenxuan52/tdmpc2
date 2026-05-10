@@ -9,18 +9,18 @@ from typing import Dict, List
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.backends.backend_pdf import PdfPages
 
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/separate_seed.yaml")
-OUT_PATH = Path("figures/drift_separate_beta0.1.pdf")
+OUT_DIR = Path("figures")
+OUT_FILE_PREFIX = "drift_separate"
 
 # METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
 METHODS_TO_PLOT = ["Beta0.1"]
 METHOD_META = {
     "MPPI": {"planner_col": "action_drift/mppi", "label": "MPPI", "color": "#4C9A2A"},
-    "Beta0.0": {"planner_col": "action_drift/diffusion", "label": "Beta 0.0", "color": "#2F78B7"},
-    "Beta0.1": {"planner_col": "action_drift/diffusion", "label": "Beta 0.1", "color": "#1FAE9A"},
+    "Beta0.0": {"planner_col": "action_drift/diffusion", "label": r"$\beta=0.0$", "color": "#2F78B7"},
+    "Beta0.1": {"planner_col": "action_drift/diffusion", "label": r"$\beta=0.1$", "color": "#1FAE9A"},
 }
 
 TASK_GRID = [
@@ -31,12 +31,25 @@ TASK_GRID = [
 ]
 ALL_TASKS = [t for row in TASK_GRID for t in row]
 
+
+# ===== Easy-to-tune plotting knobs =====
+X_TICK_FONT_SIZE = 15
+Y_TICK_FONT_SIZE = 15
+X_LABEL_FONT_SIZE = 18
+Y_LABEL_FONT_SIZE = 18
+SUBPLOT_TITLE_FONT_SIZE = 20
+LEGEND_FONT_SIZE = 16
+LEGEND_Y = 0.005  # distance between legend and subplots
+POLICY_LINE_WIDTH = 2.0
+METHOD_LINE_WIDTH = 3.5
+LEGEND_LINE_WIDTH = 5.0
+
 # Typography one-stop interface
 FONT = {
-    "title": 20,
-    "axis_label": 18,
-    "ticks": 15,
-    "legend": 16,
+    "title": SUBPLOT_TITLE_FONT_SIZE,
+    "axis_label": X_LABEL_FONT_SIZE,
+    "ticks": X_TICK_FONT_SIZE,
+    "legend": LEGEND_FONT_SIZE,
 }
 
 POLICY_COL = "action_drift/pi"
@@ -124,13 +137,22 @@ def _ema(values: np.ndarray, alpha: float = EMA_ALPHA) -> np.ndarray:
 
 
 def _mean_se(curves: List[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
-    arr = np.vstack(curves)
-    n = np.sum(np.isfinite(arr), axis=0)
-    mean = np.nanmean(arr, axis=0)
+    arr = np.vstack(curves).astype(float)
+    finite = np.isfinite(arr)
+    n = np.sum(finite, axis=0)
+
+    mean = np.full(arr.shape[1], np.nan, dtype=float)
+    valid_mean = n > 0
+    if np.any(valid_mean):
+        sums = np.where(finite, arr, 0.0).sum(axis=0)
+        mean[valid_mean] = sums[valid_mean] / n[valid_mean]
+
     se = np.full_like(mean, np.nan)
-    valid = n >= 2
-    if np.any(valid):
-        se[valid] = np.nanstd(arr[:, valid], axis=0, ddof=1) / np.sqrt(n[valid])
+    valid_se = n >= 2
+    if np.any(valid_se):
+        centered = np.where(finite, arr - mean[None, :], 0.0)
+        var = np.where(valid_se, (centered ** 2).sum(axis=0) / (n - 1), np.nan)
+        se[valid_se] = np.sqrt(var[valid_se]) / np.sqrt(n[valid_se])
     return mean, se
 
 
@@ -169,68 +191,75 @@ def _compute_unified_ymax(seed_cfg: Dict[str, Dict[str, List[int]]], x_grid: np.
 
 
 def main() -> None:
-    OUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
     seed_cfg = _parse_seed_config(SEED_CONFIG)
     x_grid = np.linspace(0, X_MAX, 1001, dtype=float)
     unified_ymax = _compute_unified_ymax(seed_cfg, x_grid)
 
-    with PdfPages(OUT_PATH) as pdf:
-        for method in METHODS_TO_PLOT:
-            meta = METHOD_META[method]
-            fig, axes = plt.subplots(4, 2, figsize=(18, 10), sharex=True)
+    for method in METHODS_TO_PLOT:
+        meta = METHOD_META[method]
+        out_path = OUT_DIR / f"{OUT_FILE_PREFIX}_{method}.pdf"
+        fig, axes = plt.subplots(4, 2, figsize=(18, 10), sharex=True)
 
-            for r in range(4):
-                for c in range(2):
-                    task = TASK_GRID[r][c]
-                    ax = axes[r, c]
-                    p_curves, m_curves = _collect_curves(method, task, x_grid, seed_cfg)
+        for r in range(4):
+            for c in range(2):
+                task = TASK_GRID[r][c]
+                ax = axes[r, c]
+                p_curves, m_curves = _collect_curves(method, task, x_grid, seed_cfg)
 
-                    if p_curves and m_curves:
-                        p_mean, p_se = _mean_se(p_curves)
-                        m_mean, m_se = _mean_se(m_curves)
-                        p_mean = _ema(p_mean)
-                        m_mean = _ema(m_mean)
-                        ax.plot(x_grid, p_mean, ls="-", lw=2.0, alpha=P_MEAN_ALPHA, color=POLICY_COLOR, label="Policy network")
-                        ax.fill_between(x_grid, p_mean - p_se, p_mean + p_se, color=POLICY_COLOR, alpha=0.14, linewidth=0)
-                        ax.plot(x_grid, m_mean, lw=2.5, alpha=MEAN_ALPHA, color=meta["color"], label=meta["label"])
-                        ax.fill_between(x_grid, m_mean - m_se, m_mean + m_se, color=meta["color"], alpha=0.14, linewidth=0)
+                if p_curves and m_curves:
+                    p_mean, p_se = _mean_se(p_curves)
+                    m_mean, m_se = _mean_se(m_curves)
+                    p_mean = _ema(p_mean)
+                    m_mean = _ema(m_mean)
+                    ax.plot(x_grid, p_mean, ls="-", lw=POLICY_LINE_WIDTH, alpha=P_MEAN_ALPHA, color=POLICY_COLOR, label="Policy network")
+                    ax.fill_between(x_grid, p_mean - p_se, p_mean + p_se, color=POLICY_COLOR, alpha=0.14, linewidth=0)
+                    ax.plot(x_grid, m_mean, lw=METHOD_LINE_WIDTH, alpha=MEAN_ALPHA, color=meta["color"], label=meta["label"])
+                    ax.fill_between(x_grid, m_mean - m_se, m_mean + m_se, color=meta["color"], alpha=0.14, linewidth=0)
 
-                    ymin, ymax = (0.0, unified_ymax.get(task, 0.05))
-                    if task in Y_BOUNDS_OVERRIDE:
-                        ymin, ymax = Y_BOUNDS_OVERRIDE[task]
-                    ax.set_ylim(ymin, ymax)
-                    ax.set_yticks([ymin, ymax])
-                    ax.set_yticklabels([f"{ymin:.1f}", f"{ymax:.1f}"], fontsize=FONT["ticks"])
-                    title_task = task[3:] if c == 1 and task.startswith("mw-") else task
-                    ax.set_title(_prettify_task(title_task), fontsize=FONT["title"])
-                    ax.set_facecolor("white")
-                    ax.grid(color="#d9d9d9", linewidth=0.8, alpha=0.55)
-                    ax.spines["top"].set_visible(False)
-                    ax.spines["right"].set_visible(False)
-                    ax.spines["left"].set_visible(True)
-                    ax.spines["bottom"].set_visible(True)
-                    ax.spines["left"].set_color("black")
-                    ax.spines["bottom"].set_color("black")
-                    ax.spines["left"].set_linewidth(1.2)
-                    ax.spines["bottom"].set_linewidth(1.2)
+                ymin, ymax = (0.0, unified_ymax.get(task, 0.05))
+                if task in Y_BOUNDS_OVERRIDE:
+                    ymin, ymax = Y_BOUNDS_OVERRIDE[task]
+                ax.set_ylim(ymin, ymax)
+                ax.set_yticks([ymin, ymax])
+                ax.set_yticklabels([f"{ymin:.1f}", f"{ymax:.1f}"], fontsize=Y_TICK_FONT_SIZE)
+                title_task = task[3:] if c == 1 and task.startswith("mw-") else task
+                ax.set_title(_prettify_task(title_task), fontsize=SUBPLOT_TITLE_FONT_SIZE)
+                ax.set_facecolor("white")
+                ax.grid(color="#d9d9d9", linewidth=0.8, alpha=0.55)
+                ax.spines["top"].set_visible(False)
+                ax.spines["right"].set_visible(False)
+                ax.spines["left"].set_visible(True)
+                ax.spines["bottom"].set_visible(True)
+                ax.spines["left"].set_color("black")
+                ax.spines["bottom"].set_color("black")
+                ax.spines["left"].set_linewidth(1.2)
+                ax.spines["bottom"].set_linewidth(1.2)
 
-                    if r == 3:
-                        ax.set_xlabel("Time steps (1M)", fontsize=FONT["axis_label"])
-                        ax.set_xticks(X_TICKS)
-                        ax.set_xticklabels(X_TICK_LABELS, fontsize=FONT["ticks"])
-                    else:
-                        ax.tick_params(axis="x", labelsize=FONT["ticks"])
+                if r == 3:
+                    ax.set_xlabel("Time steps (1M)", fontsize=X_LABEL_FONT_SIZE)
+                    ax.set_xticks(X_TICKS)
+                    ax.set_xticklabels(X_TICK_LABELS, fontsize=X_TICK_FONT_SIZE)
+                else:
+                    ax.tick_params(axis="x", labelsize=X_TICK_FONT_SIZE)
 
-            fig.supylabel("selected-action squared difference", fontsize=FONT["axis_label"])
+        fig.supylabel("selected-action squared difference", fontsize=Y_LABEL_FONT_SIZE)
 
-            handles, labels = axes[0, 0].get_legend_handles_labels()
-            if handles:
-                fig.legend(handles, labels, ncol=2, loc="lower center", bbox_to_anchor=(0.5, 0.005), fontsize=FONT["legend"], frameon=False)
-            fig.tight_layout(rect=[0.02, 0.06, 0.98, 0.99])
-            pdf.savefig(fig)
-            plt.close(fig)
+        handles, labels = axes[0, 0].get_legend_handles_labels()
+        if handles:
+            leg = fig.legend(handles, labels, ncol=2, loc="lower center", bbox_to_anchor=(0.5, LEGEND_Y), fontsize=LEGEND_FONT_SIZE, frameon=False)
+            legend_handles = getattr(leg, "legendHandles", None)
+            if legend_handles is None:
+                legend_handles = getattr(leg, "legend_handles", None)
+            if legend_handles is None:
+                legend_handles = leg.get_lines()
+            for h in legend_handles:
+                h.set_linewidth(LEGEND_LINE_WIDTH)
 
-    print(f"Saved plot to {OUT_PATH}")
+        fig.tight_layout(rect=[0.02, 0.06, 0.98, 0.99])
+        fig.savefig(out_path)
+        plt.close(fig)
+        print(f"Saved plot to {out_path}")
 
 
 if __name__ == "__main__":
