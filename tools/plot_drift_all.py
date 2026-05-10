@@ -14,8 +14,12 @@ import pandas as pd
 
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/diff_metric")
 SEED_CONFIG = Path("tools/diff/all_seed.yaml")
-PLOT_MODE = "Gap"  # choose from: "Drift", "Gap", "All"
 DRIFT_BOXPLOT_YLIM = (-0.71, 0.91)
+
+# ===== Easy-to-tune plotting knobs =====
+AXIS_TICK_FONT_SIZE = 19
+BOTTOM_LEGEND_FONT_SIZE = 20
+BOTTOM_LEGEND_Y = -0.01  # distance between bottom legend and upper subplots
 
 EPS = 1e-8
 POLICY_DENOM_FLOOR = 1e-3
@@ -26,7 +30,7 @@ X_TICK_LABELS = [f"{v:.1f}" for v in np.linspace(0.0, 1.0, 6)]
 DM_TASKS = ["acrobot-swingup", "cheetah-run", "dog-trot", "humanoid-walk"]
 MW_TASKS = ["mw-button-press-wall", "mw-handle-pull-side", "mw-pick-place", "mw-window-open"]
 
-FONT = {"title": 24, "axis_label": 22, "ticks": 19, "legend": 20, "big_title": 30, "big_legend": 22}
+FONT = {"title": 24, "axis_label": 22, "ticks": AXIS_TICK_FONT_SIZE, "legend": BOTTOM_LEGEND_FONT_SIZE, "big_title": 30, "big_legend": 22}
 MEAN_ALPHA = 0.95
 EMA_WINDOW = 25
 EMA_ALPHA = 0.1
@@ -291,46 +295,29 @@ def _plot_drift_line(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[st
     _style_axes(ax, title, "Normalized Drift", (y_min, y_max), show_y_label=show_y_label, use_time_axis=True)
 
 def main() -> None:
-    if PLOT_MODE not in {"Drift", "Gap", "All"}:
-        raise ValueError("PLOT_MODE must be 'Drift', 'Gap' or 'All'")
-
-    out_path = Path(f"figures/drift_all_{PLOT_MODE}.pdf")
+    out_path = Path("figures/drift_all_Gap.pdf")
     out_path.parent.mkdir(parents=True, exist_ok=True)
     seed_cfg = _parse_seed_config(SEED_CONFIG)
     x_grid = np.linspace(0, X_MAX, 1001, dtype=float)
-    domain_cfg = [("DMC", "DMControl", DM_TASKS), ("MetaWorld", "Meta World", MW_TASKS)]
 
-    if PLOT_MODE == "All":
-        fig, ax = plt.subplots(1, 1, figsize=(12.0, 7.5), sharex=False)
-        domain_name, _, tasks = domain_cfg[1]  # Meta World only
-        _plot_drift_box(
-            ax, tasks, seed_cfg, domain_name, show_y_label=False, title="Normalized Drift",
-            show_xlabel=False, y_lim=DRIFT_BOXPLOT_YLIM,
-        )
-        ax.axhline(0.0, color="#4d4d4d", linestyle="--", linewidth=2.0, alpha=0.95, zorder=1)
-        fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0])
-    elif PLOT_MODE == "Gap":
-        fig, axes = plt.subplots(1, 2, figsize=(18, 5.5), sharex=False)
-        domain_name, _, tasks = domain_cfg[1]  # Meta World only
-        _plot_drift_line(axes[0], tasks, seed_cfg, x_grid, domain_name, show_y_label=False, title="")
-        axes[0].set_xlabel("")
-        axes[0].set_xticks(X_TICKS)
-        axes[0].set_xticklabels(["0k", "200k", "400k", "600k", "800k", "1M"], fontsize=FONT["ticks"])
-        axes[1].set_ylim((-0.71, 0.81))
-        _plot_drift_box(
-            axes[1], tasks, seed_cfg, domain_name, show_y_label=False, title="", show_xlabel=False,
-            y_lim=DRIFT_BOXPLOT_YLIM, legend_inside=True, horizontal=True,
-        )
-        handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, -0.01), fontsize=FONT["legend"], frameon=False)
-        fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0]); fig.subplots_adjust(wspace=0.22)
-    else:
-        fig, axes = plt.subplots(1, 2, figsize=(18, 7.5), sharex=True)
-        for idx, (ax, (domain_name, title, tasks)) in enumerate(zip(axes, domain_cfg)):
-            _plot_drift_line(ax, tasks, seed_cfg, x_grid, domain_name, show_y_label=(idx == 0), title=title)
-        handles, labels = axes[0].get_legend_handles_labels()
-        fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, -0.01), fontsize=FONT["legend"], frameon=False)
-        fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0]); fig.subplots_adjust(wspace=0.18)
+    fig, axes = plt.subplots(1, 2, figsize=(18, 5.5), sharex=False)
+    domain_name, tasks = "MetaWorld", MW_TASKS
+
+    _plot_drift_line(axes[0], tasks, seed_cfg, x_grid, domain_name, show_y_label=False, title="")
+    axes[0].set_xlabel("")
+    axes[0].set_xticks(X_TICKS)
+    axes[0].set_xticklabels(["0k", "200k", "400k", "600k", "800k", "1M"], fontsize=FONT["ticks"])
+
+    axes[1].set_ylim((-0.71, 0.81))
+    _plot_drift_box(
+        axes[1], tasks, seed_cfg, domain_name, show_y_label=False, title="", show_xlabel=False,
+        y_lim=DRIFT_BOXPLOT_YLIM, legend_inside=True, horizontal=True,
+    )
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    fig.legend(handles, labels, ncol=3, loc="lower center", bbox_to_anchor=(0.5, BOTTOM_LEGEND_Y), fontsize=FONT["legend"], frameon=False)
+    fig.tight_layout(rect=[0.02, 0.10, 0.98, 1.0])
+    fig.subplots_adjust(wspace=0.22)
 
     fig.savefig(out_path)
     plt.close(fig)
