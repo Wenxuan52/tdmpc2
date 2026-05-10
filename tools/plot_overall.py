@@ -71,7 +71,17 @@ DOMAIN_SPECS = {
 
 SEEDS = [1, 2, 3]
 GRID_STEP = 100_000
-PLOT_CFG = load_plot_config()
+OVERALL_PLOT_CFG = {
+    "title_fontsize": 18,
+    "subtitle_fontsize": 15,
+    "legend_fontsize": 16,
+    "xtick_labelsize": 14,
+    "ytick_labelsize": 14,
+    "subplot_ours_linewidth": 3.2,
+    "subplot_baseline_linewidth": 2.0,
+    "legend_method_linewidth": 4.0,
+    "legend_y": -0.16,
+}
 TASK_ALIASES = {
     # Keep backward compatibility with previously used task names.
     "myo-hand-key-turn": ["myo-key-turn"],
@@ -190,10 +200,10 @@ def main() -> None:
         )
     plt.rcParams.update(
         {
-            "font.size": 14,
-            "axes.titlesize": int(PLOT_CFG["title_fontsize"]),
+            "font.size": 11,
+            "axes.titlesize": int(OVERALL_PLOT_CFG["title_fontsize"]),
             "axes.labelsize": 16,
-            "legend.fontsize": int(PLOT_CFG["legend_fontsize"]),
+            "legend.fontsize": int(OVERALL_PLOT_CFG["legend_fontsize"]),
         }
     )
     fig, axes = plt.subplots(1, len(DOMAIN_SPECS), figsize=(20, 4), dpi=200)
@@ -202,7 +212,7 @@ def main() -> None:
         for method in methods:
             x, m, lo, hi = domain_method_stats(method, domain, spec, args.baseline_root, args.ours_root)
             line_alpha = 0.95 if method == "ours" else 0.55
-            line_width = float(PLOT_CFG["subplot_ours_linewidth"]) if method == "ours" else float(PLOT_CFG["subplot_baseline_linewidth"])
+            line_width = float(OVERALL_PLOT_CFG["subplot_ours_linewidth"]) if method == "ours" else float(OVERALL_PLOT_CFG["subplot_baseline_linewidth"])
             ax.plot(x, m, color=COLORS[method], lw=line_width, label=DEFAULT_LABELS[method], alpha=line_alpha)
             ax.fill_between(x, lo, hi, color=COLORS[method], alpha=0.12, linewidth=0)
         # Two-line title: bold domain name, normal task count
@@ -211,7 +221,7 @@ def main() -> None:
             transform=ax.transAxes,
             ha="center",
             va="bottom",
-            fontsize=int(PLOT_CFG["title_fontsize"]),
+            fontsize=int(OVERALL_PLOT_CFG["title_fontsize"]),
             fontweight="bold",
         )
 
@@ -220,7 +230,7 @@ def main() -> None:
             transform=ax.transAxes,
             ha="center",
             va="bottom",
-            fontsize=int(PLOT_CFG["title_fontsize"]),
+            fontsize=int(OVERALL_PLOT_CFG["subtitle_fontsize"]),
             fontweight="normal",
         )
         ax.set_xlim(0, spec["x_max"])
@@ -228,16 +238,16 @@ def main() -> None:
         xt = np.arange(0, spec["x_max"] + 1, 1_000_000)
         ax.set_xticks(xt)
         ax.set_xticklabels(["0"] + [f"{int(v/1_000_000)}M" for v in xt[1:]])
-        ax.tick_params(axis="x", labelsize=int(PLOT_CFG["xtick_labelsize"]))
-        ax.tick_params(axis="y", labelsize=int(PLOT_CFG["ytick_labelsize"]))
+        ax.tick_params(axis="x", labelsize=int(OVERALL_PLOT_CFG["xtick_labelsize"]))
+        ax.tick_params(axis="y", labelsize=int(OVERALL_PLOT_CFG["ytick_labelsize"]))
         ax.grid(True, alpha=0.25)
     handles = [
-        Line2D([], [], color=COLORS[m], linewidth=float(PLOT_CFG["legend_method_linewidth"]), alpha=0.95 if m == "ours" else 0.55)
+        Line2D([], [], color=COLORS[m], linewidth=float(OVERALL_PLOT_CFG["legend_method_linewidth"]), alpha=0.95 if m == "ours" else 0.55)
         for m in DRAW_ORDER
     ]
     labels = [DEFAULT_LABELS[m] for m in DRAW_ORDER]
-    fig.legend(handles, labels, loc="lower center", ncol=5, frameon=False, bbox_to_anchor=(0.5, -0.03))
-    plt.tight_layout(rect=[0, 0.08, 1, 1])
+    fig.legend(handles, labels, loc="lower center", ncol=5, frameon=False, bbox_to_anchor=(0.5, float(OVERALL_PLOT_CFG["legend_y"])))
+    plt.tight_layout(rect=[0, 0.18, 1, 1])
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, bbox_inches="tight")
     print(f"saved: {args.out}")
