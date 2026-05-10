@@ -51,7 +51,7 @@ DEFAULT_LABELS = {
     "sac": "SAC",
 }
 
-X_MAX = 14_000_000
+X_MAX = 8_000_000
 GRID_STEP = 100_000
 Y_MIN, Y_MAX = -20, 1020
 EXPECTED_SEEDS = [1, 2, 3]
@@ -254,11 +254,11 @@ def plot_all(args: argparse.Namespace) -> None:
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
 
         row, col = divmod(idx, 5)
-        ax.set_xticks([0, 4_000_000, 8_000_000, 12_000_000])
+        ax.set_xticks([0, 4_000_000, 8_000_000])
         ax.set_yticks([0, 500, 1000])
 
         if row == 1:
-            ax.set_xticklabels(["0", "4M", "8M", "12M"])
+            ax.set_xticklabels(["0", "4M", "8M"])
             ax.tick_params(axis="x", labelsize=int(PLOT_CFG["xtick_labelsize"]), labelbottom=True)
         else:
             ax.tick_params(axis="x", labelbottom=False)
