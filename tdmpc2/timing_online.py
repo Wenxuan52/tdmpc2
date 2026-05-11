@@ -168,7 +168,7 @@ def _aggregate_and_save(domain: str, tasks: list[str], output_root: Path):
             with open(fp, 'r', newline='') as rf:
                 rows = list(csv.DictReader(rf))
             eval_vals = [float(r['evaluation_time']) for r in rows]
-            train_vals = [float(r['training_cycle_time']) for r in rows]
+            train_vals = [float(r['training_seconds_per_env_step']) for r in rows]
             tw.writerow([task, statistics.mean(train_vals), statistics.pstdev(train_vals)])
             ew.writerow([task, statistics.mean(eval_vals), statistics.pstdev(eval_vals)])
 
