@@ -60,7 +60,8 @@ def main(cfg):
     tds = [to_td(env, obs)]
 
     for _ in range(warmup_evals):
-        while step <= cfg.seed_steps + 10:
+        warmup_end_step = step + 10
+        while step <= warmup_end_step:
             if done:
                 episode = torch.cat(tds)
                 buffer.add(episode)
@@ -78,10 +79,12 @@ def main(cfg):
             step += 1
         eval_once(env, agent, cfg.eval_episodes)
 
-    eval_times, train_cycle_times = [], []
+    eval_times, train_seconds_per_env_step = [], []
     for _ in range(measure_evals):
+        train_end_step = step + 50
         train_start = time.perf_counter()
-        while step <= cfg.seed_steps + 50:
+        train_env_steps = 0
+        while step <= train_end_step:
             if done:
                 episode = torch.cat(tds)
                 buffer.add(episode)
@@ -89,11 +92,13 @@ def main(cfg):
                 tds = [to_td(env, obs)]
             action = agent.act(obs, t0=len(tds) == 1) if step > cfg.seed_steps else env.rand_act()
             obs, reward, done, info = env.step(action)
+            train_env_steps += 1
             tds.append(to_td(env, obs, action, reward, info['terminated']))
             if step >= cfg.seed_steps:
                 agent.update(buffer)
             step += 1
-        train_cycle_times.append(time.perf_counter() - train_start)
+        train_elapsed = time.perf_counter() - train_start
+        train_seconds_per_env_step.append(train_elapsed / max(train_env_steps, 1))
 
         eval_start = time.perf_counter()
         eval_once(env, agent, cfg.eval_episodes)
@@ -102,11 +107,11 @@ def main(cfg):
     out_fp = out_dir / f'{cfg.task}_timing.csv'
     with open(out_fp, 'w', newline='') as f:
         w = csv.writer(f)
-        w.writerow(['iteration', 'training_cycle_time', 'evaluation_time'])
-        for i, (tr, ev) in enumerate(zip(train_cycle_times, eval_times), 1):
+        w.writerow(['iteration', 'training_seconds_per_env_step', 'evaluation_time'])
+        for i, (tr, ev) in enumerate(zip(train_seconds_per_env_step, eval_times), 1):
             w.writerow([i, tr, ev])
 
-    print(f'{cfg.task}: train mean={np.mean(train_cycle_times):.4f}s std={np.std(train_cycle_times):.4f}s | eval mean={np.mean(eval_times):.4f}s std={np.std(eval_times):.4f}s')
+    print(f'{cfg.task}: train mean={np.mean(train_seconds_per_env_step):.6f}s/step std={np.std(train_seconds_per_env_step):.6f}s/step | eval mean={np.mean(eval_times):.4f}s std={np.std(eval_times):.4f}s')
 
 
 if __name__ == '__main__':
