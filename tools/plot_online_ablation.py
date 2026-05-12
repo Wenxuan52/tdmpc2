@@ -47,9 +47,9 @@ COLORS = {
     5: "#8a6bc7",
 }
 
-LINEWIDTH = 2.5
-MEAN_ALPHA = 0.9
-SHADE_ALPHA = 0.16
+LINEWIDTH = 3.0
+MEAN_ALPHA = 0.75
+SHADE_ALPHA = 0.12
 
 X_MAX = 2_000_000
 GRID_STEP = 100_000
@@ -197,7 +197,7 @@ def plot_all(args: argparse.Namespace) -> None:
                 max_step_seen = max(max_step_seen, int(pd.to_numeric(raw["step"], errors="coerce").max()))
     plot_x_max = int(np.ceil(max(100_000, min(X_MAX, max_step_seen)) / GRID_STEP) * GRID_STEP)
     step_grid = np.arange(0, plot_x_max + GRID_STEP, GRID_STEP, dtype=int)
-    fig, axes = plt.subplots(2, 3, figsize=(15, 7), sharex=True, sharey=True)
+    fig, axes = plt.subplots(2, 3, figsize=(12, 7), sharex=True, sharey=True)
     axes = axes.flatten()
 
     legend_handle_map = {}
@@ -216,7 +216,7 @@ def plot_all(args: argparse.Namespace) -> None:
             if idx == 0:
                 legend_handle_map[diff] = plt.Line2D([], [], color=color, linewidth=LINEWIDTH, alpha=MEAN_ALPHA)
 
-        ax.set_title(prettify_task_name(task), fontsize=int(PLOT_CFG["title_fontsize"]))
+        ax.set_title(prettify_task_name(task), fontsize=24)
         ax.set_xlim(-1000, plot_x_max)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
@@ -224,19 +224,19 @@ def plot_all(args: argparse.Namespace) -> None:
         row, col = divmod(idx, 3)
         if plot_x_max <= 500_000:
             ax.set_xticks([0, plot_x_max // 2, plot_x_max])
-            ax.set_xticklabels(["0", f"{plot_x_max//2/1_000_000:.1f}M", f"{plot_x_max/1_000_000:.1f}M"] if row == 1 else [])
+            ax.set_xticklabels(["0", "250K", "500K"] if row == 1 else [])
         else:
             ax.set_xticks([0, 1_000_000, min(2_000_000, plot_x_max)])
         ax.set_yticks([0, 50, 100])
         if row == 1:
             if plot_x_max > 500_000:
                 ax.set_xticklabels(["0", "1M", "2M" if plot_x_max >= 2_000_000 else f"{plot_x_max/1_000_000:.1f}M"])
-            ax.tick_params(axis="x", labelsize=int(PLOT_CFG["xtick_labelsize"]), labelbottom=True)
+            ax.tick_params(axis="x", labelsize=20, labelbottom=True)
         else:
             ax.tick_params(axis="x", labelbottom=False)
 
         if col == 0:
-            ax.tick_params(axis="y", labelsize=int(PLOT_CFG["ytick_labelsize"]), labelleft=True)
+            ax.tick_params(axis="y", labelsize=20, labelleft=True)
         else:
             ax.tick_params(axis="y", labelleft=False)
 
@@ -248,7 +248,7 @@ def plot_all(args: argparse.Namespace) -> None:
         bbox_to_anchor=(0.5, -0.02),
         ncol=4,
         frameon=False,
-        fontsize=int(PLOT_CFG["legend_fontsize"]),
+        fontsize=22,
     )
     fig.subplots_adjust(left=0.06, right=0.995, top=0.93, bottom=0.18, wspace=0.15, hspace=0.35)
 
