@@ -54,6 +54,29 @@ Y_MIN, Y_MAX = -3.0, 103.0
 PLOT_CFG = load_plot_config()
 
 
+DMC_TASK_PREFIXES = ("dog-", "hopper-", "humanoid-")
+
+
+def _align_curve(task: str, df: pd.DataFrame, step_grid: np.ndarray) -> np.ndarray:
+    series = pd.Series(df["reward"].to_numpy(dtype=float), index=df["step"].to_numpy(dtype=float))
+
+    if task.startswith(DMC_TASK_PREFIXES):
+        half = GRID_STEP / 2
+        x = df["step"].to_numpy(dtype=float)
+        y = df["reward"].to_numpy(dtype=float)
+        out = np.full_like(step_grid, np.nan, dtype=float)
+        for i, g in enumerate(step_grid.astype(float)):
+            mask = (x >= g - half) & (x <= g + half)
+            if np.any(mask):
+                out[i] = float(np.nanmax(y[mask]))
+        # keep initial point at zero when available
+        if len(out) > 0 and np.isnan(out[0]):
+            out[0] = 0.0
+        return out
+
+    return series.reindex(step_grid.astype(float)).interpolate(method="index", limit_area="inside").to_numpy(dtype=float)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -82,14 +105,16 @@ def _extract_seed(path: Path) -> int | None:
 
 def _load_single_csv(path: Path) -> pd.DataFrame:
     raw = pd.read_csv(path)
-    if {"step", "episode_success"}.issubset(raw.columns):
+    if {"step", "episode_reward"}.issubset(raw.columns):
+        df = raw[["step", "episode_reward"]].rename(columns={"episode_reward": "reward"}).copy()
+    elif {"step", "episode_success"}.issubset(raw.columns):
         df = raw[["step", "episode_success"]].rename(columns={"episode_success": "reward"}).copy()
     elif {"step", "success"}.issubset(raw.columns):
         df = raw[["step", "success"]].rename(columns={"success": "reward"}).copy()
     elif {"step", "reward"}.issubset(raw.columns):
         df = raw[["step", "reward"]].copy()
     else:
-        raise ValueError(f"{path} missing columns: expected step + reward/success/episode_success")
+        raise ValueError(f"{path} missing columns: expected step + episode_reward/reward/success/episode_success")
 
     df["step"] = pd.to_numeric(df["step"], errors="coerce")
     df["reward"] = pd.to_numeric(df["reward"], errors="coerce")
@@ -134,9 +159,8 @@ def load_task_group_curves(task: str, csv_root: Path, step_grid: np.ndarray) -> 
         if seed is None or seed not in SEED_TO_DIFFUSION:
             continue
         df = _load_single_csv(path)
-        series = pd.Series(df["reward"].to_numpy(dtype=float), index=df["step"].to_numpy(dtype=float))
-        aligned = series.reindex(step_grid.astype(float)).interpolate(method="index", limit_area="inside")
-        grouped[SEED_TO_DIFFUSION[seed]].append(aligned.to_numpy(dtype=float))
+        aligned = _align_curve(task, df, step_grid)
+        grouped[SEED_TO_DIFFUSION[seed]].append(aligned)
 
     output: Dict[int, Dict[str, np.ndarray]] = {}
     for diff in DIFFUSION_LEVELS:
