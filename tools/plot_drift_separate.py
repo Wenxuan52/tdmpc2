@@ -16,7 +16,7 @@ OUT_DIR = Path("figures")
 OUT_FILE_PREFIX = "drift_separate"
 
 # METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
-METHODS_TO_PLOT = ["Beta0.1"]
+METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
 METHOD_META = {
     "MPPI": {"planner_col": "action_drift/mppi", "label": "MPPI", "color": "#4C9A2A"},
     "Beta0.0": {"planner_col": "action_drift/diffusion", "label": r"$\beta=0.0$", "color": "#2F78B7"},
@@ -243,7 +243,7 @@ def main() -> None:
                 else:
                     ax.tick_params(axis="x", labelsize=X_TICK_FONT_SIZE)
 
-        fig.supylabel("selected-action squared difference", fontsize=Y_LABEL_FONT_SIZE)
+        fig.supylabel("Squared Difference", fontsize=Y_LABEL_FONT_SIZE)
 
         handles, labels = axes[0, 0].get_legend_handles_labels()
         if handles:

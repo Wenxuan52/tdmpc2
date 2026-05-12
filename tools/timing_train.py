@@ -14,10 +14,10 @@ from typing import Dict, List, Tuple
 
 # Fill in one or more profiling directories here before running.
 CSV_ROOT_DIRS = [
-    # "/media/datasets/cheliu21/cxy_worldmodel/profiling",
-    # "/media/datasets/cheliu21/cxy_worldmodel/profiling_pixels",
-    # "/media/datasets/cheliu21/cxy_worldmodel/profiling_mppi",
-    # "/media/datasets/cheliu21/cxy_worldmodel/profiling_mppi_pixels",
+    "/media/datasets/cheliu21/cxy_worldmodel/profiling",
+    "/media/datasets/cheliu21/cxy_worldmodel/profiling_pixels",
+    "/media/datasets/cheliu21/cxy_worldmodel/profiling_mppi",
+    "/media/datasets/cheliu21/cxy_worldmodel/profiling_mppi_pixels",
 ]
 
 ITERATION_START = 2
