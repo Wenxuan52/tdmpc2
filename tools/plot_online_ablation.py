@@ -55,6 +55,7 @@ PLOT_CFG = load_plot_config()
 
 
 DMC_TASK_PREFIXES = ("dog-", "hopper-", "humanoid-")
+SUCCESS_RATE_TASKS = {"mw-assembly", "pick-ycb", "stack-cube"}
 
 
 def _align_curve(task: str, df: pd.DataFrame, step_grid: np.ndarray) -> np.ndarray:
@@ -103,7 +104,7 @@ def _extract_seed(path: Path) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _load_single_csv(path: Path) -> pd.DataFrame:
+def _load_single_csv(path: Path, task: str) -> pd.DataFrame:
     raw = pd.read_csv(path)
     if {"step", "episode_reward"}.issubset(raw.columns):
         df = raw[["step", "episode_reward"]].rename(columns={"episode_reward": "reward"}).copy()
@@ -124,7 +125,10 @@ def _load_single_csv(path: Path) -> pd.DataFrame:
     df = df.sort_values("step").drop_duplicates("step", keep="last")
 
     max_abs = np.nanmax(np.abs(df["reward"].to_numpy(dtype=float))) if not df.empty else np.nan
-    if np.isfinite(max_abs) and max_abs <= 1.5:
+    if task in SUCCESS_RATE_TASKS:
+        if np.isfinite(max_abs) and max_abs <= 1.5:
+            df["reward"] = df["reward"] * 100.0
+    elif np.isfinite(max_abs) and max_abs <= 1.5:
         df["reward"] = df["reward"] * 100.0
 
     if df.empty or int(df.iloc[0]["step"]) != 0:
@@ -148,6 +152,26 @@ def summarize_ci(curves: List[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
     return mean, ci95
 
 
+
+
+def _normalize_dmcontrol_to_100(task: str, grouped: Dict[int, List[np.ndarray]]) -> None:
+    if not task.startswith(DMC_TASK_PREFIXES):
+        return
+    vals = []
+    for curves in grouped.values():
+        for c in curves:
+            finite = c[np.isfinite(c)]
+            if finite.size:
+                vals.append(finite)
+    if not vals:
+        return
+    global_max = float(np.nanmax(np.concatenate(vals)))
+    if not np.isfinite(global_max) or global_max <= 0:
+        return
+    scale = 100.0 / global_max
+    for diff in grouped:
+        grouped[diff] = [np.clip(c * scale, 0.0, 100.0) for c in grouped[diff]]
+
 def load_task_group_curves(task: str, csv_root: Path, step_grid: np.ndarray) -> Dict[int, Dict[str, np.ndarray]]:
     files = sorted(csv_root.glob(f"{task}_*.csv"), key=lambda p: (_extract_seed(p) or 10**9, p.name))
     if not files:
@@ -158,9 +182,11 @@ def load_task_group_curves(task: str, csv_root: Path, step_grid: np.ndarray) -> 
         seed = _extract_seed(path)
         if seed is None or seed not in SEED_TO_DIFFUSION:
             continue
-        df = _load_single_csv(path)
+        df = _load_single_csv(path, task)
         aligned = _align_curve(task, df, step_grid)
         grouped[SEED_TO_DIFFUSION[seed]].append(aligned)
+
+    _normalize_dmcontrol_to_100(task, grouped)
 
     output: Dict[int, Dict[str, np.ndarray]] = {}
     for diff in DIFFUSION_LEVELS:
@@ -174,7 +200,17 @@ def load_task_group_curves(task: str, csv_root: Path, step_grid: np.ndarray) -> 
 
 
 def plot_all(args: argparse.Namespace) -> None:
-    step_grid = np.arange(0, X_MAX + GRID_STEP, GRID_STEP, dtype=int)
+    max_step_seen = 0
+    for task in TASKS:
+        for fp in args.csv_root.glob(f"{task}_*.csv"):
+            try:
+                raw = pd.read_csv(fp, usecols=["step"])
+            except Exception:
+                continue
+            if not raw.empty:
+                max_step_seen = max(max_step_seen, int(pd.to_numeric(raw["step"], errors="coerce").max()))
+    plot_x_max = int(np.ceil(max(100_000, min(X_MAX, max_step_seen)) / GRID_STEP) * GRID_STEP)
+    step_grid = np.arange(0, plot_x_max + GRID_STEP, GRID_STEP, dtype=int)
     fig, axes = plt.subplots(2, 4, figsize=(18, 7), sharex=True, sharey=True)
     axes = axes.flatten()
 
@@ -201,15 +237,20 @@ def plot_all(args: argparse.Namespace) -> None:
                 legend_labels.append(f"{diff} diffusion steps")
 
         ax.set_title(prettify_task_name(task), fontsize=int(PLOT_CFG["title_fontsize"]))
-        ax.set_xlim(-1000, X_MAX)
+        ax.set_xlim(-1000, plot_x_max)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
 
         row, col = divmod(idx, 4)
-        ax.set_xticks([0, 1_000_000, 2_000_000])
+        if plot_x_max <= 500_000:
+            ax.set_xticks([0, plot_x_max // 2, plot_x_max])
+            ax.set_xticklabels(["0", f"{plot_x_max//2/1_000_000:.1f}M", f"{plot_x_max/1_000_000:.1f}M"] if row == 1 else [])
+        else:
+            ax.set_xticks([0, 1_000_000, min(2_000_000, plot_x_max)])
         ax.set_yticks([0, 50, 100])
         if row == 1:
-            ax.set_xticklabels(["0", "1M", "2M"])
+            if plot_x_max > 500_000:
+                ax.set_xticklabels(["0", "1M", "2M" if plot_x_max >= 2_000_000 else f"{plot_x_max/1_000_000:.1f}M"])
             ax.tick_params(axis="x", labelsize=int(PLOT_CFG["xtick_labelsize"]), labelbottom=True)
         else:
             ax.tick_params(axis="x", labelbottom=False)
