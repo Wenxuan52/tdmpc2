@@ -78,7 +78,8 @@ def _parse_duration_to_hours(text: str) -> float:
     else:
         days = 0
         h, m, s = [int(x) for x in text.strip().split(":")]
-    return timedelta(days=days, hours=h, minutes=m, seconds=s).total_seconds() / 3600.0
+    # convert to per-100K-step runtime (total runtime / 5) in hours
+    return timedelta(days=days, hours=h, minutes=m, seconds=s).total_seconds() / 3600.0 / 5.0
 
 
 def _runtime_mean_std_hours() -> tuple[np.ndarray, np.ndarray]:
@@ -210,7 +211,7 @@ def plot_all(args: argparse.Namespace) -> None:
     means, stds = _runtime_mean_std_hours()
     x = np.arange(4, dtype=float)
     bar_colors = [COLORS[d] for d in PLOT_ORDER]
-    bar_ax.bar(x, means, width=0.82, color=bar_colors, edgecolor="none", alpha=0.9, zorder=2)
+    bar_ax.bar(x, means, width=0.82, color=bar_colors, edgecolor="none", alpha=0.85, zorder=2)
     lower = np.maximum(means - stds, 0)
     upper = means + stds
     std_lines = bar_ax.vlines(x, lower, upper, colors="black", linewidth=4.0, zorder=4)
@@ -219,14 +220,14 @@ def plot_all(args: argparse.Namespace) -> None:
     except Exception:
         pass
     bar_ax.set_title("Runtime", fontsize=24)
-    bar_ax.set_ylabel("Hours", fontsize=22)
+    bar_ax.set_ylabel("Hours per 100K Steps", fontsize=22)
     bar_ax.set_xticks(x)
-    bar_ax.set_xticklabels([str(d) for d in PLOT_ORDER], fontsize=20)
+    bar_ax.set_xticklabels(["", "", "", ""])
     bar_ax.tick_params(axis="y", labelsize=20)
     bar_ax.grid(True, axis="y", linestyle="-", linewidth=0.8, alpha=0.25)
     bar_ax.spines["top"].set_visible(False)
     bar_ax.spines["right"].set_visible(False)
-    bar_ax.set_xlabel("Diffusion steps", fontsize=22)
+    bar_ax.tick_params(axis="x", length=0)
 
     axes = [fig.add_subplot(gs[r, c]) for r in range(2) for c in range(1, 4)]
     legend_handle_map = {}
@@ -263,7 +264,7 @@ def plot_all(args: argparse.Namespace) -> None:
             ax.tick_params(axis="y", labelleft=False)
 
     fig.legend([legend_handle_map[d] for d in [20, 15, 10, 5]], [str(d) for d in [20, 15, 10, 5]], loc="lower center", bbox_to_anchor=(0.6, -0.02), ncol=4, frameon=False, fontsize=22)
-    fig.subplots_adjust(left=0.05, right=0.995, top=0.93, bottom=0.18, wspace=0.2, hspace=0.35)
+    fig.subplots_adjust(left=0.05, right=0.995, top=0.93, bottom=0.18, wspace=0.28, hspace=0.35)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, dpi=300, bbox_inches="tight")
