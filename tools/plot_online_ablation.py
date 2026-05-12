@@ -47,6 +47,10 @@ COLORS = {
     5: "#8a6bc7",
 }
 
+LINEWIDTH = 2.5
+MEAN_ALPHA = 0.9
+SHADE_ALPHA = 0.16
+
 X_MAX = 2_000_000
 GRID_STEP = 100_000
 Y_MIN, Y_MAX = -3.0, 103.0
@@ -151,7 +155,7 @@ def _apply_task_scaling(task: str, df: pd.DataFrame) -> pd.DataFrame:
     if task.startswith(DMC_TASK_PREFIXES):
         out["reward"] = out["reward"] / 10.0
     elif task.startswith(METAWORLD_TASK_PREFIX):
-        out["reward"] = out["reward"] * 1000.0
+        out["reward"] = out["reward"] * 100.0
     return out
 
 
@@ -206,15 +210,11 @@ def plot_all(args: argparse.Namespace) -> None:
             stats = stats_by_diff[diff]
             mean, ci = stats["mean"], stats["ci"]
             color = COLORS[diff]
-            linewidth = float(PLOT_CFG["subplot_ours_linewidth"]) if diff == 20 else float(PLOT_CFG["subplot_baseline_linewidth"])
-            alpha = 1.0 if diff == 20 else 0.75
-            ax.plot(step_grid, mean, color=color, linewidth=linewidth, alpha=alpha)
-            ax.plot(step_grid, mean + ci, color=color, linewidth=1.0, alpha=float(PLOT_CFG["ci_alpha"]))
-            ax.plot(step_grid, mean - ci, color=color, linewidth=1.0, alpha=float(PLOT_CFG["ci_alpha"]))
-            ax.fill_between(step_grid, mean - ci, mean + ci, color=color, alpha=0.16, linewidth=0)
+            ax.plot(step_grid, mean, color=color, linewidth=LINEWIDTH, alpha=MEAN_ALPHA)
+            ax.fill_between(step_grid, mean - ci, mean + ci, color=color, alpha=SHADE_ALPHA, linewidth=0)
 
             if idx == 0:
-                legend_handle_map[diff] = plt.Line2D([], [], color=color, linewidth=float(PLOT_CFG["legend_method_linewidth"]), alpha=alpha)
+                legend_handle_map[diff] = plt.Line2D([], [], color=color, linewidth=LINEWIDTH, alpha=MEAN_ALPHA)
 
         ax.set_title(prettify_task_name(task), fontsize=int(PLOT_CFG["title_fontsize"]))
         ax.set_xlim(-1000, plot_x_max)
