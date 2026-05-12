@@ -21,8 +21,6 @@ TASKS: List[str] = [
     "humanoid-stand",
     "humanoid-walk",
     "mw-assembly",
-    "pick-ycb",
-    "stack-cube",
 ]
 
 SEED_TO_DIFFUSION: Dict[int, int] = {
@@ -40,6 +38,7 @@ SEED_TO_DIFFUSION: Dict[int, int] = {
     12: 5,
 }
 DIFFUSION_LEVELS = [20, 15, 10, 5]
+PLOT_ORDER = [5, 10, 15, 20]
 
 COLORS = {
     20: "#d64a4b",
@@ -55,7 +54,7 @@ PLOT_CFG = load_plot_config()
 
 
 DMC_TASK_PREFIXES = ("dog-", "hopper-", "humanoid-")
-SUCCESS_RATE_TASKS = {"mw-assembly", "pick-ycb", "stack-cube"}
+METAWORLD_TASK_PREFIX = "mw-"
 
 
 def _align_curve(task: str, df: pd.DataFrame, step_grid: np.ndarray) -> np.ndarray:
@@ -124,18 +123,11 @@ def _load_single_csv(path: Path, task: str) -> pd.DataFrame:
     df["step"] = df["step"].astype(int)
     df = df.sort_values("step").drop_duplicates("step", keep="last")
 
-    max_abs = np.nanmax(np.abs(df["reward"].to_numpy(dtype=float))) if not df.empty else np.nan
-    if task in SUCCESS_RATE_TASKS:
-        if np.isfinite(max_abs) and max_abs <= 1.5:
-            df["reward"] = df["reward"] * 100.0
-    elif np.isfinite(max_abs) and max_abs <= 1.5:
-        df["reward"] = df["reward"] * 100.0
-
     if df.empty or int(df.iloc[0]["step"]) != 0:
         df = pd.concat([pd.DataFrame([{"step": 0, "reward": 0.0}]), df], ignore_index=True)
         df = df.sort_values("step").drop_duplicates("step", keep="last")
 
-    return df
+    return _apply_task_scaling(task, df)
 
 
 def summarize_ci(curves: List[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
@@ -154,23 +146,14 @@ def summarize_ci(curves: List[np.ndarray]) -> tuple[np.ndarray, np.ndarray]:
 
 
 
-def _normalize_dmcontrol_to_100(task: str, grouped: Dict[int, List[np.ndarray]]) -> None:
-    if not task.startswith(DMC_TASK_PREFIXES):
-        return
-    vals = []
-    for curves in grouped.values():
-        for c in curves:
-            finite = c[np.isfinite(c)]
-            if finite.size:
-                vals.append(finite)
-    if not vals:
-        return
-    global_max = float(np.nanmax(np.concatenate(vals)))
-    if not np.isfinite(global_max) or global_max <= 0:
-        return
-    scale = 100.0 / global_max
-    for diff in grouped:
-        grouped[diff] = [np.clip(c * scale, 0.0, 100.0) for c in grouped[diff]]
+def _apply_task_scaling(task: str, df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    if task.startswith(DMC_TASK_PREFIXES):
+        out["reward"] = out["reward"] / 10.0
+    elif task.startswith(METAWORLD_TASK_PREFIX):
+        out["reward"] = out["reward"] * 1000.0
+    return out
+
 
 def load_task_group_curves(task: str, csv_root: Path, step_grid: np.ndarray) -> Dict[int, Dict[str, np.ndarray]]:
     files = sorted(csv_root.glob(f"{task}_*.csv"), key=lambda p: (_extract_seed(p) or 10**9, p.name))
@@ -186,7 +169,6 @@ def load_task_group_curves(task: str, csv_root: Path, step_grid: np.ndarray) -> 
         aligned = _align_curve(task, df, step_grid)
         grouped[SEED_TO_DIFFUSION[seed]].append(aligned)
 
-    _normalize_dmcontrol_to_100(task, grouped)
 
     output: Dict[int, Dict[str, np.ndarray]] = {}
     for diff in DIFFUSION_LEVELS:
@@ -211,17 +193,16 @@ def plot_all(args: argparse.Namespace) -> None:
                 max_step_seen = max(max_step_seen, int(pd.to_numeric(raw["step"], errors="coerce").max()))
     plot_x_max = int(np.ceil(max(100_000, min(X_MAX, max_step_seen)) / GRID_STEP) * GRID_STEP)
     step_grid = np.arange(0, plot_x_max + GRID_STEP, GRID_STEP, dtype=int)
-    fig, axes = plt.subplots(2, 4, figsize=(18, 7), sharex=True, sharey=True)
+    fig, axes = plt.subplots(2, 3, figsize=(15, 7), sharex=True, sharey=True)
     axes = axes.flatten()
 
-    legend_handles = []
-    legend_labels = []
+    legend_handle_map = {}
 
     for idx, task in enumerate(TASKS):
         ax = axes[idx]
         stats_by_diff = load_task_group_curves(task, args.csv_root, step_grid)
 
-        for diff in DIFFUSION_LEVELS:
+        for diff in PLOT_ORDER:
             stats = stats_by_diff[diff]
             mean, ci = stats["mean"], stats["ci"]
             color = COLORS[diff]
@@ -233,15 +214,14 @@ def plot_all(args: argparse.Namespace) -> None:
             ax.fill_between(step_grid, mean - ci, mean + ci, color=color, alpha=0.16, linewidth=0)
 
             if idx == 0:
-                legend_handles.append(plt.Line2D([], [], color=color, linewidth=float(PLOT_CFG["legend_method_linewidth"]), alpha=alpha))
-                legend_labels.append(f"{diff} diffusion steps")
+                legend_handle_map[diff] = plt.Line2D([], [], color=color, linewidth=float(PLOT_CFG["legend_method_linewidth"]), alpha=alpha)
 
         ax.set_title(prettify_task_name(task), fontsize=int(PLOT_CFG["title_fontsize"]))
         ax.set_xlim(-1000, plot_x_max)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
 
-        row, col = divmod(idx, 4)
+        row, col = divmod(idx, 3)
         if plot_x_max <= 500_000:
             ax.set_xticks([0, plot_x_max // 2, plot_x_max])
             ax.set_xticklabels(["0", f"{plot_x_max//2/1_000_000:.1f}M", f"{plot_x_max/1_000_000:.1f}M"] if row == 1 else [])
@@ -260,9 +240,10 @@ def plot_all(args: argparse.Namespace) -> None:
         else:
             ax.tick_params(axis="y", labelleft=False)
 
+    legend_order = [20, 15, 10, 5]
     fig.legend(
-        legend_handles,
-        legend_labels,
+        [legend_handle_map[d] for d in legend_order],
+        [str(d) for d in legend_order],
         loc="lower center",
         bbox_to_anchor=(0.5, -0.02),
         ncol=4,
