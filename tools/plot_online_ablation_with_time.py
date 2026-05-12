@@ -205,13 +205,13 @@ def plot_all(args: argparse.Namespace) -> None:
     step_grid = np.arange(0, plot_x_max + GRID_STEP, GRID_STEP, dtype=int)
 
     fig = plt.figure(figsize=(16, 7), dpi=300)
-    gs = GridSpec(2, 4, figure=fig, width_ratios=[1.1, 1, 1, 1])
+    gs = GridSpec(2, 4, figure=fig, width_ratios=[1.25, 1, 1, 1])
 
     bar_ax = fig.add_subplot(gs[:, 0])
     means, stds = _runtime_mean_std_hours()
     x = np.arange(4, dtype=float)
     bar_colors = [COLORS[d] for d in PLOT_ORDER]
-    bar_ax.bar(x, means, width=0.82, color=bar_colors, edgecolor="none", alpha=0.85, zorder=2)
+    bar_ax.bar(x, means, width=0.82, color=bar_colors, edgecolor="none", alpha=0.75, zorder=2)
     lower = np.maximum(means - stds, 0)
     upper = means + stds
     std_lines = bar_ax.vlines(x, lower, upper, colors="black", linewidth=4.0, zorder=4)
@@ -220,7 +220,7 @@ def plot_all(args: argparse.Namespace) -> None:
     except Exception:
         pass
     bar_ax.set_title("Runtime", fontsize=24)
-    bar_ax.set_ylabel("Hours per 100K Steps", fontsize=22)
+    bar_ax.set_ylabel("Hours / 100K", fontsize=22)
     bar_ax.set_xticks(x)
     bar_ax.set_xticklabels(["", "", "", ""])
     bar_ax.tick_params(axis="y", labelsize=20)
@@ -263,8 +263,8 @@ def plot_all(args: argparse.Namespace) -> None:
         else:
             ax.tick_params(axis="y", labelleft=False)
 
-    fig.legend([legend_handle_map[d] for d in [20, 15, 10, 5]], [str(d) for d in [20, 15, 10, 5]], loc="lower center", bbox_to_anchor=(0.6, -0.02), ncol=4, frameon=False, fontsize=22)
-    fig.subplots_adjust(left=0.05, right=0.995, top=0.93, bottom=0.18, wspace=0.28, hspace=0.35)
+    fig.legend([legend_handle_map[d] for d in [20, 15, 10, 5]], [str(d) for d in [20, 15, 10, 5]], loc="lower center", bbox_to_anchor=(0.5, -0.035), ncol=4, frameon=False, fontsize=22)
+    fig.subplots_adjust(left=0.05, right=0.995, top=0.93, bottom=0.20, wspace=0.30, hspace=0.35)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(args.out, dpi=300, bbox_inches="tight")
