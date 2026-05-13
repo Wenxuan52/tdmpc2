@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Visualize trained mt80 task embeddings from a checkpoint with UMAP/t-SNE."""
+"""Visualize trained mt80 task embeddings from a checkpoint with UMAP/t-SNE.
+
+This version draws a wider figure and only annotates clustered / nearby tasks.
+"""
 
 from __future__ import annotations
 
@@ -21,16 +24,119 @@ except ModuleNotFoundError:
 
 EMBED_SAVE_DIR = Path("/media/datasets/cheliu21/cxy_worldmodel/embeddings/")
 EMBED_SAVE_PATH = EMBED_SAVE_DIR / "task_embedding_trained_mt80.pt"
-FIG_SAVE_PATH = Path("figures/embeddings.pdf")
+FIG_SAVE_PATH = Path("figures/embeddings_small.png")
 
 DMCONTROL_COLOR = "#5da7df"
 METAWORLD_COLOR = "#d64a4b"
+
 REDUCTION_METHOD = "tsne"  # choose from {"umap", "tsne"}
 SEED = 999
+
 CHECKPOINT_PATH = Path(
 	"/media/datasets/cheliu21/cxy_worldmodel/checkpoint/"
 	"mt80_317M_8gpu_cpu19_reserve23_20260403_024905/gpu4/mt80/321/final.pt"
 )
+
+
+# Only annotate tasks that form visually meaningful nearby clusters.
+# All points are still drawn, but isolated / less informative tasks are not labeled.
+CLUSTERED_LABEL_TASKS = {
+	# DMControl locomotion clusters
+	"hopper-stand",
+	"hopper-hop",
+	"hopper-hop-backwards",
+
+	"walker-stand",
+	"walker-walk",
+	"walker-run",
+	"walker-walk-backwards",
+	"walker-run-backwards",
+
+	"cheetah-run",
+	"cheetah-run-front",
+	"cheetah-run-back",
+	"cheetah-run-backwards",
+	"cheetah-jump",
+
+	# DMControl control / manipulation-like clusters
+	"cartpole-balance",
+	"cartpole-balance-sparse",
+	"cartpole-swingup",
+	"cartpole-swingup-sparse",
+
+	"pendulum-swingup",
+	"pendulum-spin",
+	"acrobot-swingup",
+
+	"reacher-easy",
+	"reacher-hard",
+	"reacher-three-easy",
+	"reacher-three-hard",
+
+	"finger-spin",
+	"finger-turn-easy",
+	"finger-turn-hard",
+
+	"cup-catch",
+	"cup-spin",
+
+	# MetaWorld button / coffee clusters
+	"mw-button-press",
+	"mw-button-press-wall",
+	"mw-button-press-topdown",
+	"mw-button-press-topdown-wall",
+	"mw-coffee-button",
+	"mw-coffee-push",
+	"mw-coffee-pull",
+
+	# MetaWorld door / drawer / window clusters
+	"mw-door-lock",
+	"mw-door-unlock",
+	"mw-door-close",
+	"mw-drawer-open",
+	"mw-drawer-close",
+	"mw-window-open",
+	"mw-window-close",
+
+	# MetaWorld plate / faucet nearby clusters
+	"mw-faucet-open",
+	"mw-faucet-close",
+	"mw-plate-slide",
+	"mw-plate-slide-side",
+	"mw-plate-slide-back",
+	"mw-plate-slide-back-side",
+
+	# MetaWorld pick / place / shelf / peg clusters
+	"mw-pick-place",
+	"mw-pick-place-wall",
+	"mw-shelf-place",
+	"mw-peg-insert-side",
+	"mw-peg-unplug-side",
+	"mw-pick-out-of-hole",
+
+	# MetaWorld handle / lever clusters
+	"mw-handle-press",
+	"mw-handle-press-side",
+	"mw-handle-pull",
+	"mw-handle-pull-side",
+	"mw-lever-pull",
+
+	# MetaWorld push / reach / sweep / stick clusters
+	"mw-push",
+	"mw-push-wall",
+	"mw-push-back",
+	"mw-reach",
+	"mw-reach-wall",
+	"mw-sweep-into",
+	"mw-stick-push",
+	"mw-stick-pull",
+
+	# Other nearby MetaWorld points in dense regions
+	"mw-basketball",
+	"mw-soccer",
+	"mw-box-close",
+	"mw-hand-insert",
+}
 
 
 def _title_from_dash_name(name: str) -> str:
@@ -159,90 +265,106 @@ def main() -> None:
 	dm_xy = xy[:30]
 	mw_xy = xy[30:]
 
-	# 图放大，但点大小和字体大小保持不变
-	fig, ax = plt.subplots(figsize=(18, 28))
+	# Wider figure for main / appendix presentation.
+	fig, ax = plt.subplots(figsize=(24, 18))
 
-	# 给坐标轴留白，让 adjustText 有更多空间移动文字
+	# Add margin so labels have room to move.
 	x_min, x_max = xy[:, 0].min(), xy[:, 0].max()
 	y_min, y_max = xy[:, 1].min(), xy[:, 1].max()
 
 	x_range = x_max - x_min
 	y_range = y_max - y_min
 
-	x_pad = x_range * 0.12
-	y_pad = y_range * 0.05
+	x_pad = x_range * 0.14
+	y_pad = y_range * 0.12
 
 	ax.set_xlim(x_min - x_pad, x_max + x_pad)
 	ax.set_ylim(y_min - y_pad, y_max + y_pad)
 
-	# 点大小保持不变：s=1300
+	# Larger points.
+	marker_size = 3200
+
 	ax.scatter(
 		dm_xy[:, 0],
 		dm_xy[:, 1],
-		s=2300,
+		s=marker_size,
 		marker="s",
 		c=DMCONTROL_COLOR,
 		edgecolors="white",
-		linewidths=2,
+		linewidths=2.5,
 		alpha=0.65,
 	)
 
 	ax.scatter(
 		mw_xy[:, 0],
 		mw_xy[:, 1],
-		s=2300,
+		s=marker_size,
 		marker="o",
 		c=METAWORLD_COLOR,
 		edgecolors="white",
-		linewidths=2,
+		linewidths=2.5,
 		alpha=0.65,
 	)
 
 	texts = []
+	label_x = []
+	label_y = []
 
 	for idx, task_name in enumerate(tasks):
+		if task_name not in CLUSTERED_LABEL_TASKS:
+			continue
+
 		x, y = xy[idx]
 		label = _format_task_label(task_name)
 
-		texts.append(
-			ax.text(
-				x,
-				y + 0.0,
-				label,
-				fontsize=16,
-				fontweight="bold",
-				color="#1f2430",
-				alpha=0.85,
-				ha="center",
-				va="bottom",
-			)
-		)
+		# texts.append(
+		# 	ax.text(
+		# 		x,
+		# 		y,
+		# 		label,
+		# 		fontsize=22,
+		# 		fontweight="bold",
+		# 		color="#1f2430",
+		# 		alpha=0.88,
+		# 		ha="center",
+		# 		va="bottom",
+		# 	)
+		# )
+
+		label_x.append(x)
+		label_y.append(y)
+
+	label_x = np.asarray(label_x)
+	label_y = np.asarray(label_y)
 
 	adjust_text(
 		texts,
+
+		# Avoid all 80 task points.
 		x=xy[:, 0],
 		y=xy[:, 1],
-		target_x=xy[:, 0],
-		target_y=xy[:, 1],
+
+		# Arrows only point back to labeled tasks.
+		target_x=label_x,
+		target_y=label_y,
+
 		ax=ax,
 
-		expand_text=(1.1, 1.2),
-		expand_points=(1.1, 1.2),
-		force_text=(0.3, 0.4),
-		force_points=(0.15, 0.25),
+		# Keep labels relatively close to their own points.
+		expand_text=(1.08, 1.15),
+		expand_points=(1.05, 1.12),
+		force_text=(0.28, 0.36),
+		force_points=(0.10, 0.18),
 
-		# 增加迭代次数，让 adjustText 有更多机会找到更好的位置
-		lim=2000,
-
-		# 尽量让所有指示箭头都画出来
+		lim=2500,
 		min_arrow_len=0,
 
 		arrowprops=dict(
 			arrowstyle="->",
 			color="#222222",
-			lw=1.3,
+			lw=1.2,
 			alpha=0.65,
-			shrinkA=8,
+			shrinkA=6,
 			shrinkB=0,
 			mutation_scale=10,
 		),
@@ -255,8 +377,9 @@ def main() -> None:
 		spine.set_visible(False)
 
 	FIG_SAVE_PATH.parent.mkdir(parents=True, exist_ok=True)
-	plt.tight_layout(pad=1.5)
-	plt.savefig(FIG_SAVE_PATH, dpi=220)
+
+	plt.tight_layout(pad=1.0)
+	plt.savefig(FIG_SAVE_PATH, bbox_inches="tight", pad_inches=0.1)
 	plt.close()
 
 	print(f"[visual_embedding] Saved {REDUCTION_METHOD.upper()} figure to: {FIG_SAVE_PATH}")

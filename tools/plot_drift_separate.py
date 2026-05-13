@@ -18,9 +18,9 @@ OUT_FILE_PREFIX = "drift_separate"
 # METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
 METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
 METHOD_META = {
-    "MPPI": {"planner_col": "action_drift/mppi", "label": "MPPI", "color": "#4C9A2A"},
-    "Beta0.0": {"planner_col": "action_drift/diffusion", "label": r"$\beta=0.0$", "color": "#2F78B7"},
-    "Beta0.1": {"planner_col": "action_drift/diffusion", "label": r"$\beta=0.1$", "color": "#1FAE9A"},
+    "MPPI": {"planner_col": "action_drift/mppi", "label": "TD-MPC2", "color": "#4C9A2A"},
+    "Beta0.0": {"planner_col": "action_drift/diffusion", "label": r"MBDPO ($\eta=0.0$)", "color": "#2F78B7"},
+    "Beta0.1": {"planner_col": "action_drift/diffusion", "label": r"MBDPO ($\eta=0.1$)", "color": "#1FAE9A"},
 }
 
 TASK_GRID = [

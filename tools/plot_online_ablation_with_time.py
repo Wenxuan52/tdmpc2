@@ -219,8 +219,8 @@ def plot_all(args: argparse.Namespace) -> None:
         std_lines.set_capstyle("round")
     except Exception:
         pass
-    bar_ax.set_title("Runtime", fontsize=24)
-    bar_ax.set_ylabel("Hours / 100K", fontsize=22)
+    bar_ax.set_title("Runtime", fontsize=22)
+    bar_ax.set_ylabel("Hours / 100K", fontsize=20)
     bar_ax.set_xticks(x)
     bar_ax.set_xticklabels(["", "", "", ""])
     bar_ax.tick_params(axis="y", labelsize=20)
@@ -241,7 +241,7 @@ def plot_all(args: argparse.Namespace) -> None:
             ax.fill_between(step_grid, mean - ci, mean + ci, color=color, alpha=SHADE_ALPHA, linewidth=0)
             if idx == 0:
                 legend_handle_map[diff] = plt.Line2D([], [], color=color, linewidth=LINEWIDTH, alpha=MEAN_ALPHA)
-        ax.set_title(prettify_task_name(task), fontsize=24)
+        ax.set_title(prettify_task_name(task), fontsize=22)
         ax.set_xlim(-1000, plot_x_max)
         ax.set_ylim(Y_MIN, Y_MAX)
         ax.grid(True, linestyle="-", linewidth=0.8, alpha=0.25)
@@ -263,7 +263,19 @@ def plot_all(args: argparse.Namespace) -> None:
         else:
             ax.tick_params(axis="y", labelleft=False)
 
-    fig.legend([legend_handle_map[d] for d in [20, 15, 10, 5]], [str(d) for d in [20, 15, 10, 5]], loc="lower center", bbox_to_anchor=(0.5, -0.035), ncol=4, frameon=False, fontsize=22)
+    dummy_handle = plt.Line2D([], [], linestyle="none", linewidth=0)
+
+    fig.legend(
+        [dummy_handle] + [legend_handle_map[d] for d in [20, 15, 10, 5]],
+        ["Denoise Steps"] + [str(d) for d in [20, 15, 10, 5]],
+        loc="lower center",
+        bbox_to_anchor=(0.5, 0.01),
+        ncol=5,
+        frameon=False,
+        fontsize=22,
+        handlelength=1.5,
+        columnspacing=1.4,
+    )
     fig.subplots_adjust(left=0.05, right=0.995, top=0.93, bottom=0.20, wspace=0.30, hspace=0.35)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)

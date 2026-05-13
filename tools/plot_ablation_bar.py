@@ -15,10 +15,10 @@ mpl.rcParams['font.family'] = 'DejaVu Sans'
 
 
 def build_colors(n: int) -> list[str]:
-    """Use GnBu colormap, avoiding colors that are too light."""
+    """Use viridis colormap, avoiding colors that are too light."""
     cmap = plt.get_cmap('viridis')
 
-    # Avoid the very light end of GnBu.
+    # Avoid the very light end of viridis.
     color_values = np.linspace(0.30, 0.90, n)
 
     return [mcolors.to_hex(cmap(v)) for v in color_values]
@@ -44,6 +44,19 @@ def main() -> None:
         linestyle='--',
         linewidth=0.8,
         alpha=0.25,
+        zorder=0,
+    )
+
+    # Bar plot: same mean values as the line plot.
+    # No std/error bars on bars. Bars are narrower and use corresponding point colors.
+    ax.bar(
+        x,
+        means,
+        width=0.33,
+        color=colors,
+        alpha=0.55,
+        edgecolor='none',
+        zorder=1,
     )
 
     # Main trend line from eta=0.0 to eta=1.0.
@@ -53,7 +66,7 @@ def main() -> None:
         color='#5f5f5f',
         linewidth=2.2,
         alpha=0.75,
-        zorder=1,
+        zorder=2,
     )
 
     # Dashed segment from eta=1.0 to eta=5.0.
@@ -64,10 +77,10 @@ def main() -> None:
         linewidth=2.2,
         linestyle=(0, (4, 3)),
         alpha=0.75,
-        zorder=1,
+        zorder=2,
     )
 
-    # Colored points and std error bars.
+    # Colored points and std error bars for the line plot.
     for xi, mean, std, color in zip(x, means, stds, colors):
         ax.errorbar(
             xi,
@@ -78,11 +91,11 @@ def main() -> None:
             markerfacecolor=mcolors.to_rgba(color, 0.96),
             markeredgecolor=mcolors.to_rgba('#222222', 0.55),
             markeredgewidth=1.35,
-            ecolor=mcolors.to_rgba(color, 0.95),
+            ecolor=mcolors.to_rgba('black', 0.85),
             elinewidth=1.8,
             capsize=5.2,
             capthick=1.8,
-            zorder=3,
+            zorder=4,
         )
 
     # Axis styling.
@@ -100,10 +113,9 @@ def main() -> None:
     ax.set_xlabel(r'$\eta$ Ablation', fontsize=20, labelpad=8)
     ax.set_ylabel('Score', fontsize=20, labelpad=8)
 
-    # Larger title and larger distance between title and plot.
-    # ax.set_title(r'$\eta$ Ablation', fontsize=22, pad=30)
-
     # Y-axis range and ticks.
+    # Set ylim explicitly so bars do not force the y-axis to start from 0.
+    ax.set_ylim(65, 83.5)
     ax.set_yticks(np.arange(66, 84, 3))
 
     # Larger tick labels.
@@ -127,7 +139,7 @@ def main() -> None:
             fontsize=12,
             fontweight='semibold',
             color='#333333',
-            zorder=4,
+            zorder=5,
             clip_on=False,
         )
 
@@ -150,7 +162,7 @@ def main() -> None:
         linewidth=1.3,
         transform=axis_transform,
         clip_on=False,
-        zorder=5,
+        zorder=6,
     )
 
     ax.plot(
@@ -161,7 +173,7 @@ def main() -> None:
         linestyle=(0, (4, 3)),
         transform=axis_transform,
         clip_on=False,
-        zorder=5,
+        zorder=6,
     )
 
     ax.plot(
@@ -171,12 +183,12 @@ def main() -> None:
         linewidth=1.3,
         transform=axis_transform,
         clip_on=False,
-        zorder=5,
+        zorder=6,
     )
 
     fig.tight_layout()
 
-    out_path = Path('/root/workspace/tdmpc2/figures/Ablation.pdf')
+    out_path = Path('/root/workspace/tdmpc2/figures/Ablation_bar.pdf')
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, bbox_inches='tight', dpi=300)
     plt.close(fig)

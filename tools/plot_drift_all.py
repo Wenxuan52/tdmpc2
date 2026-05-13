@@ -35,9 +35,9 @@ MEAN_ALPHA = 0.95
 EMA_WINDOW = 25
 EMA_ALPHA = 0.1
 METHOD_META = {
-    "MPPI": {"drift_col": "action_drift/mppi", "gap_col": "planner_gap/mppi_to_policy", "label": "MPPI", "color": "#7fd54c"},
-    "Beta0.0": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.0)", "color": "#5da7df"},
-    "Beta0.1": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": "Diffusion (β=0.1)", "color": "#5ad7c3"},
+    "MPPI": {"drift_col": "action_drift/mppi", "gap_col": "planner_gap/mppi_to_policy", "label": "TD-MPC2", "color": "#7fd54c"},
+    "Beta0.0": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": r"MBDPO ($\eta=0.0$)", "color": "#5da7df"},
+    "Beta0.1": {"drift_col": "action_drift/diffusion", "gap_col": "planner_gap/diffusion_to_policy", "label": r"MBDPO ($\eta=0.1$)", "color": "#5ad7c3"},
 }
 METHODS_TO_PLOT = ["MPPI", "Beta0.0", "Beta0.1"]
 STEP_STAGES = [(0, 250_000), (250_000, 500_000), (500_000, 750_000), (750_000, 1_000_000)]
@@ -257,7 +257,7 @@ def _plot_drift_box(ax: plt.Axes, tasks: List[str], seed_cfg: Dict[str, Dict[str
         y_min, y_max = (0.0, 0.05)
     if horizontal:
         ax.set_yticks(centers)
-        ax.set_yticklabels(["MPPI", r"$\beta=0.0$", r"$\beta=0.1$"], fontsize=FONT["ticks"])
+        ax.set_yticklabels(["TD-MPC2", r"$\eta=0.0$", r"$\eta=0.1$"], fontsize=FONT["ticks"])
         _style_axes(ax, title, "Methods", (centers.min() - 0.45, centers.max() + 0.45), show_y_label=show_y_label, use_time_axis=False)
         ax.set_xlim(y_min, y_max)
         ax.set_xlabel("Normalized Drift", fontsize=FONT["axis_label"])
