@@ -224,6 +224,12 @@ def off2on(cfg):
 	cfg.steps = int(getattr(cfg, 'steps', 40_000) or 40_000)
 	cfg.steps = 40_000 if cfg.steps <= 0 else cfg.steps
 	cfg.eval_freq = int(getattr(cfg, 'eval_freq', 5_000) or 5_000)
+	cfg.eval_episodes = int(getattr(cfg, 'eval_episodes', 10) or 10)
+	if cfg.eval_episodes <= 0:
+		raise ValueError('`eval_episodes` must be > 0')
+	cfg.diffusion_steps = int(getattr(cfg, 'diffusion_steps', 20) or 20)
+	if cfg.diffusion_steps < 2:
+		raise ValueError('`diffusion_steps` must be >= 2 for diffusion planner.')
 
 	if load_checkpoint:
 		state_dict = _load_checkpoint_state_dict(checkpoint)
@@ -268,6 +274,9 @@ def off2on(cfg):
 		csv.writer(f).writerow(['step', 'episode_reward', 'episode_success', 'episode_length'])
 
 	print(colored(f'[Off2On] target={target_task} source={source_task} new_task_idx={new_task_idx}', 'yellow', attrs=['bold']))
+	print(colored(
+		f'[Off2On] contrastive_beta={float(getattr(cfg, "contrastive_beta", 0.01))} diffusion_steps={cfg.diffusion_steps} eval_episodes={cfg.eval_episodes}',
+		'yellow', attrs=['bold']))
 	print(colored(f'[Off2On] output_dir={out_dir}', 'yellow', attrs=['bold']))
 
 	if cfg.eval_freq > 0:
