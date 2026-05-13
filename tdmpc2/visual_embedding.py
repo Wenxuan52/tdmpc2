@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Export and visualize initialized mt80 task embeddings with t-SNE."""
+"""Export and visualize initialized mt80 task embeddings with selectable reduction."""
 
 from __future__ import annotations
 
 from pathlib import Path
+import argparse
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -33,6 +34,24 @@ def _build_mt80_embedding(seed: int = 0, dim: int = 96) -> tuple[list[str], torc
 	return tasks, embedding.weight.detach().cpu()
 
 
+def _reduce_embedding(weight: np.ndarray, method: str, seed: int) -> np.ndarray:
+	method = method.lower()
+	if method == "tsne":
+		reducer = TSNE(n_components=2, random_state=seed, init="pca", learning_rate="auto", perplexity=20)
+		return reducer.fit_transform(weight)
+	if method == "umap":
+		try:
+			import umap  # type: ignore
+		except ModuleNotFoundError as exc:
+			raise ModuleNotFoundError(
+				"UMAP is selected but `umap-learn` is not installed. "
+				"Please install it via `pip install umap-learn`."
+			) from exc
+		reducer = umap.UMAP(n_components=2, random_state=seed, n_neighbors=12, min_dist=0.35)
+		return reducer.fit_transform(weight)
+	raise ValueError(f"Unsupported method '{method}'. Choose from ['umap', 'tsne'].")
+
+
 def _select_labels(xy: np.ndarray, tasks: list[str], max_labels: int = 18, min_dist: float = 8.0) -> list[int]:
 	"""Greedy label selection to reduce overlap in plotted task names."""
 	order = np.argsort(xy[:, 0] + xy[:, 1])
@@ -52,14 +71,21 @@ def _select_labels(xy: np.ndarray, tasks: list[str], max_labels: int = 18, min_d
 	return selected
 
 
+def parse_args() -> argparse.Namespace:
+	parser = argparse.ArgumentParser(description="Export and visualize mt80 task embedding.")
+	parser.add_argument("--seed", type=int, default=0, help="Random seed for embedding initialization and reduction.")
+	parser.add_argument("--method", type=str, default="umap", choices=["umap", "tsne"], help="Dimensionality reduction method.")
+	return parser.parse_args()
+
+
 def main() -> None:
-	tasks, weight = _build_mt80_embedding(seed=0, dim=96)
+	args = parse_args()
+	tasks, weight = _build_mt80_embedding(seed=args.seed, dim=96)
 	EMBED_SAVE_DIR.mkdir(parents=True, exist_ok=True)
-	torch.save({"task": "mt80", "seed": 0, "tasks": tasks, "embedding_weight": weight}, EMBED_SAVE_PATH)
+	torch.save({"task": "mt80", "seed": args.seed, "tasks": tasks, "embedding_weight": weight}, EMBED_SAVE_PATH)
 	print(f"[visual_embedding] Saved mt80 embedding matrix to: {EMBED_SAVE_PATH}")
 
-	tsne = TSNE(n_components=2, random_state=0, init="pca", learning_rate="auto", perplexity=20)
-	xy = tsne.fit_transform(weight.numpy())
+	xy = _reduce_embedding(weight.numpy(), method=args.method, seed=args.seed)
 
 	dm_xy = xy[:30]
 	mw_xy = xy[30:]
@@ -84,7 +110,7 @@ def main() -> None:
 	plt.tight_layout()
 	plt.savefig(FIG_SAVE_PATH, dpi=220)
 	plt.close()
-	print(f"[visual_embedding] Saved t-SNE figure to: {FIG_SAVE_PATH}")
+	print(f"[visual_embedding] Saved {args.method.upper()} figure to: {FIG_SAVE_PATH}")
 
 
 if __name__ == "__main__":
