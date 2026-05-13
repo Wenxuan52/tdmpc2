@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-import argparse
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -25,6 +24,8 @@ FIG_SAVE_PATH = Path("figures/embeddings.png")
 
 DMCONTROL_COLOR = "#5da7df"
 METAWORLD_COLOR = "#d64a4b"
+REDUCTION_METHOD = "umap"  # choose from {"umap", "tsne"}
+SEED = 0
 
 
 def _build_mt80_embedding(seed: int = 0, dim: int = 96) -> tuple[list[str], torch.Tensor]:
@@ -71,21 +72,13 @@ def _select_labels(xy: np.ndarray, tasks: list[str], max_labels: int = 18, min_d
 	return selected
 
 
-def parse_args() -> argparse.Namespace:
-	parser = argparse.ArgumentParser(description="Export and visualize mt80 task embedding.")
-	parser.add_argument("--seed", type=int, default=0, help="Random seed for embedding initialization and reduction.")
-	parser.add_argument("--method", type=str, default="umap", choices=["umap", "tsne"], help="Dimensionality reduction method.")
-	return parser.parse_args()
-
-
 def main() -> None:
-	args = parse_args()
-	tasks, weight = _build_mt80_embedding(seed=args.seed, dim=96)
+	tasks, weight = _build_mt80_embedding(seed=SEED, dim=96)
 	EMBED_SAVE_DIR.mkdir(parents=True, exist_ok=True)
-	torch.save({"task": "mt80", "seed": args.seed, "tasks": tasks, "embedding_weight": weight}, EMBED_SAVE_PATH)
+	torch.save({"task": "mt80", "seed": SEED, "tasks": tasks, "embedding_weight": weight}, EMBED_SAVE_PATH)
 	print(f"[visual_embedding] Saved mt80 embedding matrix to: {EMBED_SAVE_PATH}")
 
-	xy = _reduce_embedding(weight.numpy(), method=args.method, seed=args.seed)
+	xy = _reduce_embedding(weight.numpy(), method=REDUCTION_METHOD, seed=SEED)
 
 	dm_xy = xy[:30]
 	mw_xy = xy[30:]
@@ -110,7 +103,7 @@ def main() -> None:
 	plt.tight_layout()
 	plt.savefig(FIG_SAVE_PATH, dpi=220)
 	plt.close()
-	print(f"[visual_embedding] Saved {args.method.upper()} figure to: {FIG_SAVE_PATH}")
+	print(f"[visual_embedding] Saved {REDUCTION_METHOD.upper()} figure to: {FIG_SAVE_PATH}")
 
 
 if __name__ == "__main__":
