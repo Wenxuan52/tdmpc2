@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Export and visualize initialized mt80 task embeddings with selectable reduction."""
+"""Visualize trained mt80 task embeddings from a checkpoint with UMAP/t-SNE."""
 
 from __future__ import annotations
 
@@ -19,20 +19,53 @@ except ModuleNotFoundError:
 
 
 EMBED_SAVE_DIR = Path("/media/datasets/cheliu21/cxy_worldmodel/embeddings/")
-EMBED_SAVE_PATH = EMBED_SAVE_DIR / "task_embedding_init_mt80.pt"
+EMBED_SAVE_PATH = EMBED_SAVE_DIR / "task_embedding_trained_mt80.pt"
 FIG_SAVE_PATH = Path("figures/embeddings.png")
 
 DMCONTROL_COLOR = "#5da7df"
 METAWORLD_COLOR = "#d64a4b"
 REDUCTION_METHOD = "umap"  # choose from {"umap", "tsne"}
 SEED = 0
+CHECKPOINT_PATH = Path(
+	"/media/datasets/cheliu21/cxy_worldmodel/checkpoint/"
+	"mt80_317M_8gpu_cpu19_reserve23_20260403_024905/gpu4/mt80/321/final.pt"
+)
 
 
-def _build_mt80_embedding(seed: int = 0, dim: int = 96) -> tuple[list[str], torch.Tensor]:
-	torch.manual_seed(seed)
+def _load_trained_mt80_embedding(ckpt_path: Path) -> tuple[list[str], torch.Tensor]:
+	if not ckpt_path.exists():
+		raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
+	ckpt = torch.load(ckpt_path, map_location="cpu")
+	state_dict = ckpt.get("model", ckpt) if isinstance(ckpt, dict) else ckpt
+	if not isinstance(state_dict, dict):
+		raise TypeError(f"Unexpected checkpoint format at {ckpt_path}.")
+
+	candidates = [
+		"_task_emb.weight",
+		"model._task_emb.weight",
+		"agent.model._task_emb.weight",
+	]
+	weight = None
+	for key in candidates:
+		if key in state_dict:
+			weight = state_dict[key]
+			break
+	if weight is None:
+		for key, value in state_dict.items():
+			if key.endswith("_task_emb.weight"):
+				weight = value
+				break
+	if weight is None:
+		raise KeyError(
+			"Could not find task embedding weight in checkpoint. "
+			"Tried keys: _task_emb.weight / model._task_emb.weight / agent.model._task_emb.weight"
+		)
+
 	tasks = TASK_SET["mt80"]
-	embedding = torch.nn.Embedding(len(tasks), dim, max_norm=1)
-	return tasks, embedding.weight.detach().cpu()
+	weight = weight.detach().cpu()
+	if weight.shape[0] != len(tasks):
+		raise ValueError(f"Expected {len(tasks)} tasks for mt80, got weight shape {tuple(weight.shape)}.")
+	return tasks, weight
 
 
 def _reduce_embedding(weight: np.ndarray, method: str, seed: int) -> np.ndarray:
@@ -73,10 +106,19 @@ def _select_labels(xy: np.ndarray, tasks: list[str], max_labels: int = 18, min_d
 
 
 def main() -> None:
-	tasks, weight = _build_mt80_embedding(seed=SEED, dim=96)
+	tasks, weight = _load_trained_mt80_embedding(CHECKPOINT_PATH)
 	EMBED_SAVE_DIR.mkdir(parents=True, exist_ok=True)
-	torch.save({"task": "mt80", "seed": SEED, "tasks": tasks, "embedding_weight": weight}, EMBED_SAVE_PATH)
-	print(f"[visual_embedding] Saved mt80 embedding matrix to: {EMBED_SAVE_PATH}")
+	torch.save(
+		{
+			"task": "mt80",
+			"seed": SEED,
+			"tasks": tasks,
+			"checkpoint_path": str(CHECKPOINT_PATH),
+			"embedding_weight": weight,
+		},
+		EMBED_SAVE_PATH,
+	)
+	print(f"[visual_embedding] Saved trained mt80 embedding matrix to: {EMBED_SAVE_PATH}")
 
 	xy = _reduce_embedding(weight.numpy(), method=REDUCTION_METHOD, seed=SEED)
 
