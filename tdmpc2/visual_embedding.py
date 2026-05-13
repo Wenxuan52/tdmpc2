@@ -10,7 +10,12 @@ import numpy as np
 import torch
 from sklearn.manifold import TSNE
 
-from tdmpc2.common import TASK_SET
+try:
+	# Works when launched as a module: `python -m tdmpc2.visual_embedding`
+	from tdmpc2.common import TASK_SET
+except ModuleNotFoundError:
+	# Works when launched as a script path: `python tdmpc2/visual_embedding.py`
+	from common import TASK_SET
 
 
 EMBED_SAVE_DIR = Path("/media/datasets/cheliu21/cxy_worldmodel/embeddings/")
