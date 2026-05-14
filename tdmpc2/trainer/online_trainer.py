@@ -57,6 +57,16 @@ class OnlineTrainer(Trainer):
 			'action_drift/mppi',
 			'action_drift/diffusion',
 		]
+		self._enable_td_error_metrics = bool(getattr(self.cfg, 'enable_td_error_metrics', False))
+		self._td_error_log_interval = int(getattr(self.cfg, 'td_error_log_interval', 1000) or 1000)
+		self._td_metric_csv_fp = None
+		self._td_metric_fieldnames = [
+			'step',
+			'mppi/mppi_td_error',
+			'mppi/mppi_cross_td_error',
+			'diffusion/diffusion_td_error',
+			'diffusion/diffusion_cross_td_error',
+		]
 		if self._enable_diff_metrics:
 			base_metric_root = str(getattr(self.cfg, 'diff_metric_root', '') or '').strip()
 			if not base_metric_root:
@@ -69,6 +79,15 @@ class OnlineTrainer(Trainer):
 				writer = csv.DictWriter(f, fieldnames=self._diff_metric_fieldnames)
 				writer.writeheader()
 
+
+		if self._enable_td_error_metrics:
+			td_metric_root = Path('/media/datasets/cheliu21/cxy_worldmodel/tderror_metric')
+			td_metric_root.mkdir(parents=True, exist_ok=True)
+			task_name = str(self.cfg.task).replace('/', '_')
+			self._td_metric_csv_fp = td_metric_root / f'TD_error_metric_{task_name}_seed{self.cfg.seed}.csv'
+			with open(self._td_metric_csv_fp, 'w', newline='') as f:
+				writer = csv.DictWriter(f, fieldnames=self._td_metric_fieldnames)
+				writer.writeheader()
 	def _append_reward_csv(self, step, reward):
 		if self._reward_csv_fp is None:
 			return
@@ -176,6 +195,82 @@ class OnlineTrainer(Trainer):
 		if not metrics:
 			return
 		self._append_diff_metric_csv(self._step, metrics)
+		train_metrics.update(metrics)
+		log_payload = dict(metrics)
+		log_payload.update(self.common_metrics())
+		self.logger.log(log_payload, 'train')
+
+
+	def _append_td_metric_csv(self, step, metrics):
+		if self._td_metric_csv_fp is None:
+			return
+		row = {'step': int(step)}
+		for key in self._td_metric_fieldnames[1:]:
+			row[key] = float(metrics[key]) if key in metrics else float('nan')
+		with open(self._td_metric_csv_fp, 'a', newline='') as f:
+			writer = csv.DictWriter(f, fieldnames=self._td_metric_fieldnames)
+			writer.writerow(row)
+
+	@torch.no_grad()
+	def _compute_td_error_metrics(self):
+		obs, action, reward, terminated, task = self.buffer.sample()
+		obs_t = obs[0]
+		next_obs = obs[1]
+		a_t = action[0]
+		r_t = reward[0]
+		d_t = terminated[0]
+		task_t = task if task is None else task[0]
+
+		z_t = self.agent.model.encode(obs_t, task_t)
+		next_z = self.agent.model.encode(next_obs, task_t)
+		q_pred = self.agent.model.Q(z_t, a_t, task_t, return_type='avg')
+		if q_pred.ndim == 3:
+			q_pred = q_pred.mean(dim=0)
+
+		discount = self.agent.discount[task_t].unsqueeze(-1) if self.cfg.multitask else self.agent.discount
+		planner = str(getattr(self.cfg, 'planner_type', 'mppi')).lower()
+
+		if planner == 'diffusion':
+			beta_action = action[1]
+			search_actions = [self.agent.act_diffusion(state, t0=True, eval_mode=True) for state in next_obs.detach().cpu()]
+			search_action = torch.stack(search_actions, dim=0).to(self.agent.device, non_blocking=True)
+		else:
+			beta_action, _ = self.agent.model.pi(next_z, task_t)
+			search_actions = [self.agent.act_mppi(state, t0=True, eval_mode=True) for state in next_obs.detach().cpu()]
+			search_action = torch.stack(search_actions, dim=0).to(self.agent.device, non_blocking=True)
+
+		q_beta_all = self.agent.model.Q(next_z, beta_action, task_t, return_type='all', target=True)
+		q_beta = torch.min(q_beta_all[0], q_beta_all[1])
+		y_beta = r_t + discount * (1 - d_t) * q_beta
+		delta_beta = y_beta - q_pred
+
+		q_search_all = self.agent.model.Q(next_z, search_action, task_t, return_type='all', target=True)
+		q_search = torch.min(q_search_all[0], q_search_all[1])
+		y_search = r_t + discount * (1 - d_t) * q_search
+
+		td_error = delta_beta.abs().mean().item()
+		cross_gap = (y_search - y_beta).abs().mean().item()
+		metrics = {}
+		if planner == 'diffusion':
+			metrics['diffusion/diffusion_td_error'] = td_error
+			metrics['diffusion/diffusion_cross_td_error'] = cross_gap
+		else:
+			metrics['mppi/mppi_td_error'] = td_error
+			metrics['mppi/mppi_cross_td_error'] = cross_gap
+		return metrics
+
+
+	def _maybe_log_td_error_metrics(self, train_metrics):
+		if not self._enable_td_error_metrics:
+			return
+		if self._td_error_log_interval <= 0 or self._step == 0 or self._step % self._td_error_log_interval != 0:
+			return
+		if self._step < self._min_buffer_size_for_eval:
+			return
+		metrics = self._compute_td_error_metrics()
+		if not metrics:
+			return
+		self._append_td_metric_csv(self._step, metrics)
 		train_metrics.update(metrics)
 		log_payload = dict(metrics)
 		log_payload.update(self.common_metrics())
@@ -301,6 +396,7 @@ class OnlineTrainer(Trainer):
 					_train_metrics = self.agent.update(self.buffer)
 				train_metrics.update(_train_metrics)
 				self._maybe_log_diff_metrics(train_metrics)
+				self._maybe_log_td_error_metrics(train_metrics)
 
 			self._step += 1
 
