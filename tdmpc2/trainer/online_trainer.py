@@ -348,30 +348,30 @@ class OnlineTrainer(Trainer):
 				self.logger.save_agent(self.agent, identifier=f'{self._step}')
 
 			# Reset environment
-				if done:
-					if eval_next:
-						eval_metrics = self.eval()
-						if self._reward_csv_mode == 'eval_success':
-							self._append_eval_success_csv(self._step, eval_metrics['episode_success'])
-						elif self._reward_csv_mode == 'eval_reward':
-							self._append_reward_csv(self._step, eval_metrics['episode_reward'])
-						eval_metrics.update(self.common_metrics())
-						self.logger.log(eval_metrics, 'eval')
-						eval_next = False
+			if done:
+				if eval_next:
+					eval_metrics = self.eval()
+					if self._reward_csv_mode == 'eval_success':
+						self._append_eval_success_csv(self._step, eval_metrics['episode_success'])
+					elif self._reward_csv_mode == 'eval_reward':
+						self._append_reward_csv(self._step, eval_metrics['episode_reward'])
+					eval_metrics.update(self.common_metrics())
+					self.logger.log(eval_metrics, 'eval')
+					eval_next = False
 
-					if self._step > 0:
-						if info['terminated'] and not self.cfg.episodic:
-							raise ValueError('Termination detected but you are not in episodic mode. ' \
-							'Set `episodic=true` to enable support for terminations.')
-						episode_td = torch.cat(self._tds)
-						train_metrics.update(
-							episode_reward=torch.tensor([td['reward'] for td in self._tds[1:]]).sum(),
-							episode_success=info['success'],
-							episode_length=len(self._tds),
-							episode_terminated=info['terminated'])
-						train_metrics.update(self.common_metrics())
-						self.logger.log(train_metrics, 'train')
-						self._replay_saver.add_episode(episode_td)
+				if self._step > 0:
+					if info['terminated'] and not self.cfg.episodic:
+						raise ValueError('Termination detected but you are not in episodic mode. ' \
+						'Set `episodic=true` to enable support for terminations.')
+					episode_td = torch.cat(self._tds)
+					train_metrics.update(
+						episode_reward=torch.tensor([td['reward'] for td in self._tds[1:]]).sum(),
+						episode_success=info['success'],
+						episode_length=len(self._tds),
+						episode_terminated=info['terminated'])
+					train_metrics.update(self.common_metrics())
+					self.logger.log(train_metrics, 'train')
+					self._replay_saver.add_episode(episode_td)
 					self._ep_idx = self.buffer.add(episode_td)
 
 				obs = self.env.reset()
