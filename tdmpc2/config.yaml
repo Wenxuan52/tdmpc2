@@ -52,6 +52,8 @@ reward_csv_dir: ''
 csv_eval_freq: 50000
 enable_diff_metrics: false
 drift_log_interval: 1000
+enable_td_error_metrics: false
+td_error_log_interval: 1000
 num_eval_states: 1024
 min_buffer_size_for_eval: 5000
 diff_metric_root: ''
