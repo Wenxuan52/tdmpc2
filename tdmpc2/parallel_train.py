@@ -85,6 +85,8 @@ def _build_seed_command(
 		f'csv_eval_freq={int(cfg.get("csv_eval_freq", 50_000) or 50_000)}',
 		f'enable_diff_metrics={str(bool(cfg.get("enable_diff_metrics", False))).lower()}',
 		f'drift_log_interval={int(cfg.get("drift_log_interval", 1000) or 1000)}',
+		f'enable_td_error_metrics={str(bool(cfg.get("enable_td_error_metrics", False))).lower()}',
+		f'td_error_log_interval={int(cfg.get("td_error_log_interval", 1000) or 1000)}',
 		f'num_eval_states={int(cfg.get("num_eval_states", 1024) or 1024)}',
 		f'min_buffer_size_for_eval={int(cfg.get("min_buffer_size_for_eval", 5000) or 5000)}',
 		f'diff_metric_root={diff_metric_root.as_posix()}',
