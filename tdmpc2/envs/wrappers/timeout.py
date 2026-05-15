@@ -8,14 +8,14 @@ class Timeout(gym.Wrapper):
 
 	def __init__(self, env, max_episode_steps):
 		super().__init__(env)
-		self._max_episode_steps = max_episode_steps
+		self.max_episode_steps_value = max_episode_steps
 	
 	@property
 	def max_episode_steps(self):
-		return self._max_episode_steps
+		return self.max_episode_steps_value
 
 	def reset(self, **kwargs):
-		self._t = 0
+		self.elapsed_steps = 0
 		return self.env.reset(**kwargs)
 
 	def step(self, action):
@@ -29,8 +29,8 @@ class Timeout(gym.Wrapper):
 			obs, reward, done, info = step_out
 			info = dict(info)
 			info.setdefault('terminated', bool(done))
-		self._t += 1
-		timeout = self._t >= self.max_episode_steps
+		self.elapsed_steps += 1
+		timeout = self.elapsed_steps >= self.max_episode_steps
 		done = done or timeout
 		if timeout:
 			# Time-limit endings are truncations, not environment terminations.
