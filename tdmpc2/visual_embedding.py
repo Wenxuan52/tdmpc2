@@ -25,6 +25,9 @@ FIG_SAVE_PATH = Path("figures/embeddings.pdf")
 
 DMCONTROL_COLOR = "#5da7df"
 METAWORLD_COLOR = "#d64a4b"
+# 只在绘图阶段隐藏这两个 hopper 任务；仍保留完整 embedding 参与降维。
+TASKS_TO_SKIP_IN_PLOT = {"hopper-stand", "hopper-hop-backwards"}
+# TASKS_TO_SKIP_IN_PLOT = {}
 REDUCTION_METHOD = "tsne"  # choose from {"umap", "tsne"}
 SEED = 999
 CHECKPOINT_PATH = Path(
@@ -156,15 +159,24 @@ def main() -> None:
 
 	xy = _reduce_embedding(weight.numpy(), method=REDUCTION_METHOD, seed=SEED)
 
-	dm_xy = xy[:30]
-	mw_xy = xy[30:]
+	# 只取消绘制 hopper-stand 和 hopper-hop-backwards；hopper-hop 仍会绘制并标注。
+	visible_mask = np.array(
+		[task_name not in TASKS_TO_SKIP_IN_PLOT for task_name in tasks],
+		dtype=bool,
+	)
+	dm_mask = np.arange(len(tasks)) < 30
+	mw_mask = ~dm_mask
+
+	visible_xy = xy[visible_mask]
+	dm_xy = xy[dm_mask & visible_mask]
+	mw_xy = xy[mw_mask & visible_mask]
 
 	# 图放大，但点大小和字体大小保持不变
 	fig, ax = plt.subplots(figsize=(18, 28))
 
 	# 给坐标轴留白，让 adjustText 有更多空间移动文字
-	x_min, x_max = xy[:, 0].min(), xy[:, 0].max()
-	y_min, y_max = xy[:, 1].min(), xy[:, 1].max()
+	x_min, x_max = visible_xy[:, 0].min(), visible_xy[:, 0].max()
+	y_min, y_max = visible_xy[:, 1].min(), visible_xy[:, 1].max()
 
 	x_range = x_max - x_min
 	y_range = y_max - y_min
@@ -199,10 +211,17 @@ def main() -> None:
 	)
 
 	texts = []
+	text_x = []
+	text_y = []
 
 	for idx, task_name in enumerate(tasks):
+		if task_name in TASKS_TO_SKIP_IN_PLOT:
+			continue
+
 		x, y = xy[idx]
 		label = _format_task_label(task_name)
+		text_x.append(x)
+		text_y.append(y)
 
 		texts.append(
 			ax.text(
@@ -220,10 +239,10 @@ def main() -> None:
 
 	adjust_text(
 		texts,
-		x=xy[:, 0],
-		y=xy[:, 1],
-		target_x=xy[:, 0],
-		target_y=xy[:, 1],
+		x=visible_xy[:, 0],
+		y=visible_xy[:, 1],
+		target_x=text_x,
+		target_y=text_y,
 		ax=ax,
 
 		expand_text=(1.1, 1.2),

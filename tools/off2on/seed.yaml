@@ -3,7 +3,7 @@ cheetah-run:
   finetune_seed: [4, 5, 6]
 hopper-hop:
   scratch_seed: [1, 2, 3]
-  finetune_seed: [4, 5, 6]
+  finetune_seed: [21, 24]
 mw-bin-picking:
   scratch_seed: [1, 2, 3]
   finetune_seed: [17, 18]

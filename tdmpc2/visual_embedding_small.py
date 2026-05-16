@@ -282,7 +282,7 @@ def main() -> None:
 	ax.set_ylim(y_min - y_pad, y_max + y_pad)
 
 	# Larger points.
-	marker_size = 3200
+	marker_size = 4000
 
 	ax.scatter(
 		dm_xy[:, 0],

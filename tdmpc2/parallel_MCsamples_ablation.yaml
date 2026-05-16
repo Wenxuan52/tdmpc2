@@ -1,0 +1,35 @@
+task_set: mt80
+tasks: []
+gpu_ids: []
+num_gpus: 8
+job_mode: seed
+workers_per_gpu: 3
+seeds: [7, 8, 9]
+dmc_steps: 500000
+metaworld_steps: 500000
+default_steps: 500000
+planner_type: diffusion
+obs: state
+compile: true
+compile_mode: max-autotune-no-cudagraphs
+diffusion_eval_compile: true
+diffusion_eval_compile_mode: max-autotune-no-cudagraphs
+eval_freq: 0
+save_model_every: 0
+save_replay: false
+replay_save_dir: /media/datasets/cheliu21/cxy_worldmodel/replay
+replay_flush_every_episodes: 1000
+replay_include_terminated: false
+save_reward_csv: true
+csv_eval_freq: 100000
+merge_cleanup_temp: false
+python_bin: python
+train_entry: tdmpc2/train.py
+exp_name: parallel-online-diffusion
+save_agent: true
+save_video: false
+enable_wandb: false
+common_overrides:
+  - online_save_root=/media/datasets/cheliu21/cxy_worldmodel/online_MC_ablation_checkpoint
+  - reward_csv_dir=/media/datasets/cheliu21/cxy_worldmodel/online_MC_ablation_csv
+  - diffusion_num_samples=256

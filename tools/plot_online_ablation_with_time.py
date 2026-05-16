@@ -205,13 +205,13 @@ def plot_all(args: argparse.Namespace) -> None:
     step_grid = np.arange(0, plot_x_max + GRID_STEP, GRID_STEP, dtype=int)
 
     fig = plt.figure(figsize=(16, 7), dpi=300)
-    gs = GridSpec(2, 4, figure=fig, width_ratios=[1.25, 1, 1, 1])
+    gs = GridSpec(2, 4, figure=fig, width_ratios=[1.05, 1, 1, 1])
 
     bar_ax = fig.add_subplot(gs[:, 0])
     means, stds = _runtime_mean_std_hours()
     x = np.arange(4, dtype=float)
     bar_colors = [COLORS[d] for d in PLOT_ORDER]
-    bar_ax.bar(x, means, width=0.82, color=bar_colors, edgecolor="none", alpha=0.75, zorder=2)
+    bar_ax.bar(x, means, width=0.32, color=bar_colors, edgecolor="none", alpha=0.55, zorder=2)
     lower = np.maximum(means - stds, 0)
     upper = means + stds
     std_lines = bar_ax.vlines(x, lower, upper, colors="black", linewidth=4.0, zorder=4)
