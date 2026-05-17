@@ -5,11 +5,11 @@ num_gpus: 8
 job_mode: seed
 workers_per_gpu: 3
 parallel_seeds_per_task: true
-seeds: [4, 5, 6]
+seeds: [7, 8, 9]
 dmc_steps: 1000000
 metaworld_steps: 1000000
 default_steps: 1000000
-planner_type: mppi
+planner_type: diffusion
 obs: state
 compile: true
 compile_mode: max-autotune-no-cudagraphs
@@ -17,7 +17,7 @@ diffusion_eval_compile: true
 diffusion_eval_compile_mode: max-autotune-no-cudagraphs
 eval_freq: 0
 save_model_every: 0
-save_replay: true
+save_replay: false
 replay_save_dir: /media/datasets/cheliu21/cxy_worldmodel/tderror_metric
 replay_flush_every_episodes: 1000
 replay_include_terminated: false
@@ -29,13 +29,14 @@ train_entry: tdmpc2/train.py
 exp_name: td-error-metric
 save_agent: true
 save_video: false
-enable_wandb: true
+enable_wandb: false
 wandb_name_template: td_error_metric_{task}_seed{seed}
-enable_diff_metrics: true
+enable_diff_metrics: false
 enable_td_error_metrics: true
 td_error_log_interval: 1000
 num_eval_states: 1024
 min_buffer_size_for_eval: 5000
 common_overrides:
   - online_save_root=/media/datasets/cheliu21/cxy_worldmodel/tderror_checkpoint
-  - contrastive_beta=0.1
+  - contrastive_beta=0.01
+  - diffusion_steps=20

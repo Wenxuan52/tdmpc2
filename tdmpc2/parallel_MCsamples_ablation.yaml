@@ -4,17 +4,17 @@ gpu_ids: []
 num_gpus: 8
 job_mode: seed
 workers_per_gpu: 3
-seeds: [7, 8, 9]
+seeds: [13, 14, 15]
 dmc_steps: 500000
 metaworld_steps: 500000
 default_steps: 500000
 planner_type: diffusion
 obs: state
 compile: true
-compile_mode: max-autotune-no-cudagraphs
+compile_mode: reduce-overhead
 diffusion_eval_compile: true
-diffusion_eval_compile_mode: max-autotune-no-cudagraphs
-eval_freq: 0
+diffusion_eval_compile_mode: reduce-overhead
+eval_freq: 100000
 save_model_every: 0
 save_replay: false
 replay_save_dir: /media/datasets/cheliu21/cxy_worldmodel/replay
@@ -32,4 +32,5 @@ enable_wandb: false
 common_overrides:
   - online_save_root=/media/datasets/cheliu21/cxy_worldmodel/online_MC_ablation_checkpoint
   - reward_csv_dir=/media/datasets/cheliu21/cxy_worldmodel/online_MC_ablation_csv
-  - diffusion_num_samples=256
+  - diffusion_num_samples=1024
+  - diffusion_steps=20

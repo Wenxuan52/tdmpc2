@@ -13,7 +13,7 @@ import pandas as pd
 DATA_ROOT = Path("/media/datasets/cheliu21/cxy_worldmodel/tderror_metric")
 OUT_DIR = Path("figures")
 OUT_FILE_PREFIX = "tderror_separate"
-OUT_FILE = f"{OUT_FILE_PREFIX}.pdf"
+OUT_FILE = f"{OUT_FILE_PREFIX}.png"
 
 TASK_GRID = [
     ["acrobot-swingup", "mw-button-press-wall"],
